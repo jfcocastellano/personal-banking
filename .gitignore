@@ -1,0 +1,29 @@
+# Logs directory
+logs/
+
+# Excel output files
+*.xlsx
+
+# Environment variables (never commit real credentials)
+.env
+
+# Python cache
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Distribution / packaging
+*.egg-info/
+dist/
+build/
+
+# pytest cache
+.pytest_cache/
+
+# Hypothesis database
+.hypothesis/

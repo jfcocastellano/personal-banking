@@ -1,0 +1,54 @@
+name: Daily Bank Transaction Fetch
+
+on:
+  schedule:
+    - cron: '5 0 * * *'
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+
+    env:
+      ENABLEBANKING_CLIENT_ID: ${{ secrets.ENABLEBANKING_CLIENT_ID }}
+      ENABLEBANKING_CLIENT_SECRET: ${{ secrets.ENABLEBANKING_CLIENT_SECRET }}
+      ING_ACCESS_TOKEN: ${{ secrets.ING_ACCESS_TOKEN }}
+      ING_REFRESH_TOKEN: ${{ secrets.ING_REFRESH_TOKEN }}
+      SABADELL_ACCESS_TOKEN: ${{ secrets.SABADELL_ACCESS_TOKEN }}
+      SABADELL_REFRESH_TOKEN: ${{ secrets.SABADELL_REFRESH_TOKEN }}
+      REVOLUT_ACCESS_TOKEN: ${{ secrets.REVOLUT_ACCESS_TOKEN }}
+      REVOLUT_REFRESH_TOKEN: ${{ secrets.REVOLUT_REFRESH_TOKEN }}
+      MYINVESTOR_ACCESS_TOKEN: ${{ secrets.MYINVESTOR_ACCESS_TOKEN }}
+      MYINVESTOR_REFRESH_TOKEN: ${{ secrets.MYINVESTOR_REFRESH_TOKEN }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run main.py
+        run: python main.py
+
+      - name: Upload execution log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: execution-log
+          path: logs/execution_*.log
+          retention-days: 90
+          if-no-files-found: warn
+
+      - name: Upload Excel files
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: excel-reports
+          path: "*.xlsx"
+          retention-days: 90
+          if-no-files-found: warn
