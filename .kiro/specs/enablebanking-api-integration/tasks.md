@@ -65,7 +65,7 @@ Pipeline Python desatendida que conecta con ING, Sabadell, Revolut y MyInvestor 
     - Log con credencial pasada como mensaje → credencial no aparece en texto plano
     - _Requirements: 8.2, 8.3, 8.4, 8.7_
 
-- [~] 5. Checkpoint — Verificar infraestructura base
+- [ ] 5. Checkpoint — Verificar infraestructura base
   - Asegurarse de que todos los tests pasan hasta este punto. Consultar al usuario si surgen dudas.
 
 - [x] 6. Implementar `DataNormalizer`
@@ -135,7 +135,7 @@ Pipeline Python desatendida que conecta con ING, Sabadell, Revolut y MyInvestor 
     - Verificar que ningún token aparece en texto plano en los logs
     - _Requirements: 1.4, 1.5, 1.6, 2.4, 2.6, 7.2, 7.4_
 
-- [~] 8. Checkpoint — Verificar componentes individuales
+- [ ] 8. Checkpoint — Verificar componentes individuales
   - Asegurarse de que todos los tests pasan hasta este punto. Consultar al usuario si surgen dudas.
 
 - [x] 9. Implementar `ExcelWriter`
@@ -181,7 +181,7 @@ Pipeline Python desatendida que conecta con ING, Sabadell, Revolut y MyInvestor 
     - _Requirements: 4.1, 4.2, 4.3, 4.4, 4.5, 5.1, 5.2, 5.3_
 
 - [x] 10. Implementar `main.py` — Orquestador
-  - [~] 10.1 Crear `main.py` en la raíz del proyecto
+  - [ ] 10.1 Crear `main.py` en la raíz del proyecto
     - Instanciar `ProcessLogger`, `SecretStore`, `DataNormalizer`, `ExcelWriter`
     - Definir `BANKS = ["ING", "Sabadell", "Revolut", "MyInvestor"]`
     - Calcular `yesterday = get_yesterday(date.today())`
@@ -217,7 +217,7 @@ Pipeline Python desatendida que conecta con ING, Sabadell, Revolut y MyInvestor 
     - Job: checkout → setup Python 3.12 → `pip install -r requirements-dev.txt` → `pytest tests/ -v`
     - _Requirements: 6.2_
 
-- [~] 12. Checkpoint final — Verificar integración completa
+- [ ] 12. Checkpoint final — Verificar integración completa
   - Asegurarse de que todos los tests pasan y el flujo completo funciona end-to-end con mocks. Consultar al usuario si surgen dudas.
 
 ## Notes
