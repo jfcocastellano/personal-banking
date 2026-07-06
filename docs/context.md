@@ -74,7 +74,23 @@ GitHub Actions. El scheduling lo gestiona el workflow YAML (`schedule: cron`). E
 **APIs bancarias**
 Enable Banking como agregador PSD2. Actúa de intermediario entre el proceso y las entidades (ING, Revolut, MyInvestor), abstrayendo las diferencias entre sus APIs individuales.
 
-> ⚠️ **Riesgo a validar antes de implementar:** confirmar que Enable Banking soporta las tres entidades, especialmente MyInvestor (entidad española de menor tamaño, no garantizado en agregadores PSD2).
+> ⚠️ **Riesgos a validar antes de implementar:**
+> - Confirmar que Enable Banking soporta las tres entidades, especialmente MyInvestor (entidad española de menor tamaño, no garantizado en agregadores PSD2).
+> - Las sesiones PSD2 expiran cada 90-180 días y requieren re-autorización manual (flujo browser); no hay refresh automático.
+> - El rate limit PSD2 de 4 peticiones/cuenta/día limita a 1 sincronización real por día en testing.
+
+**Enable Banking — detalles técnicos**
+
+| Aspecto | Detalle |
+|---------|---------|
+| Autenticación | JWT firmado con clave RSA privada (PS256 / RSA-PSS-SHA256) |
+| Flujo de consentimiento | OAuth2/PSD2 browser-based, una sola vez; obtiene `session_id` válido 90-180 días |
+| Ciclo de vida de sesión | `session_id` con validez 90-180 días; no existen refresh tokens — al expirar requiere re-autorización manual |
+| Límite de tasa PSD2 | Máximo 4 peticiones de información de cuenta por día por cuenta (regulación europea) |
+| Filtrado de transacciones | Solo sincronizar `status: BOOK`; ignorar `PDNG` (pendientes) e `INFO` (informativas) |
+| Sentido del movimiento | `DBIT` = cargo/gasto; `CRDT` = abono/ingreso |
+| Paginación | Parámetro `continuation_key` en el endpoint de transacciones |
+| Config local | `~/.config/banca-personal/eb-config.json` (`app_id` + ruta a clave RSA); `eb-session.json` (session_id activo) |
 
 **Google Sheets**
 Autenticación mediante cuenta de servicio de Google Cloud (service account). El JSON de credenciales se almacena como GitHub Secret. El Sheet se comparte con el email de la cuenta de servicio. No requiere intervención humana en ninguna ejecución.
@@ -90,7 +106,8 @@ Gmail SMTP con contraseña de aplicación (requiere 2FA activo en la cuenta Goog
 | `google-auth`    | Autenticación service account                      |
 | `httpx`          | Cliente HTTP para Enable Banking API               |
 | `python-dotenv`  | Carga de fichero `.env`                            |
-| `cryptography`   | Encriptación AES-256 de secretos locales           |
+| `cryptography`   | Encriptación AES-256 de secretos locales y firma JWT RSA-PSS-SHA256 (Enable Banking) |
+| `PyJWT`          | Generación y serialización de tokens JWT para autenticación Enable Banking (PS256) |
 | `pytest`         | Framework de tests                                 |
 | `pytest-mock`    | Mocking en tests                                   |
 | `ruff`           | Linting y formateo                                 |

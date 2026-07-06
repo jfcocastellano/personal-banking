@@ -1,0 +1,40 @@
+name: CI
+
+"on":
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt -r requirements-dev.txt && pip install -e .
+
+      - name: Audit dependencies for vulnerabilities
+        run: pip-audit -r requirements.txt -r requirements-dev.txt
+
+      - name: Lint with ruff check
+        run: ruff check src/ tests/
+
+      - name: Check formatting with ruff format
+        run: ruff format --check src/ tests/
+
+      - name: Type-check with mypy
+        run: mypy src/
+
+      - name: Run tests with pytest
+        run: pytest tests/
