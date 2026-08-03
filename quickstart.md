@@ -224,8 +224,28 @@ Get-Content "$env:USERPROFILE\.config\banca-personal\eb-config.json"
 
 ---
 
+## IT2 — Conector ING (Enable Banking)
+
+The `eb-config.json` placeholder created in Step 9 above is now used for real:
+`app_id` and `private_key_path` are read by the ING España connector
+(`banking.connectors.ing.IngConnector`) to sign PS256 JWTs against the Enable
+Banking API. Replace the placeholder `app_id` with your real Enable Banking
+application ID, and place your real RSA private key at `private_key_path`
+before attempting any real (non-mocked) run.
+
+The PSD2 `session_id` (obtained once via the bank's browser consent flow,
+valid 90-180 days) is stored the same way as any other secret:
+
+```bash
+python -m banking secrets set ENABLE_BANKING_SESSION_ID <your-real-session-id>
+```
+
+For the full validation guide (mocked scenarios for CI, plus an optional
+manual run against a real session), see
+`specs/002-ing-transactions-connector/quickstart.md`.
+
 ## Notes
 
 - `.env` is git-ignored — never commit it
 - `BANKING_MASTER_KEY` must never appear in any file — only in your OS environment
-- The `eb-config.json` placeholder will be replaced with real credentials during IT2
+- The `eb-config.json` placeholder was replaced with real credentials during IT2
