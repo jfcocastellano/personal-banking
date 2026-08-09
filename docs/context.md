@@ -102,8 +102,7 @@ Gmail SMTP con contraseña de aplicación (requiere 2FA activo en la cuenta Goog
 
 | Librería         | Propósito                                          |
 |------------------|----------------------------------------------------|
-| `gspread`        | Integración con Google Sheets                      |
-| `google-auth`    | Autenticación service account                      |
+| `gspread`        | Integración con Google Sheets, incluida la autenticación con cuenta de servicio vía `service_account_from_dict()` (`google-auth` se usa transitivamente, no se importa directamente — IT3) |
 | `httpx`          | Cliente HTTP para Enable Banking API               |
 | `python-dotenv`  | Carga de fichero `.env`                            |
 | `cryptography`   | Encriptación AES-256 de secretos locales y firma JWT RSA (RS256, Enable Banking) |

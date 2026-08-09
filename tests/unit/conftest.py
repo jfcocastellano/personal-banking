@@ -80,6 +80,31 @@ def session_id_in_store(
 
 
 @pytest.fixture
+def google_sheets_credentials_in_store(
+    mock_master_key: str,
+    tmp_env_file: Path,
+    rsa_private_key_pem: bytes,
+    monkeypatch: pytest.MonkeyPatch,
+) -> dict[str, str]:
+    """Store a syntactically valid (but fake) service-account JSON under
+    ``GOOGLE_SHEETS_CREDENTIALS`` the writer can read via the default
+    ``SecretStore()``. Returns the dict that was stored.
+    """
+    monkeypatch.setenv("BANKING_ENV_FILE", str(tmp_env_file))
+    info = {
+        "type": "service_account",
+        "project_id": "test-project",
+        "private_key_id": "test-key-id",
+        "private_key": rsa_private_key_pem.decode("utf-8"),
+        "client_email": "test@test-project.iam.gserviceaccount.com",
+        "client_id": "123456789",
+        "token_uri": "https://oauth2.googleapis.com/token",
+    }
+    SecretStore(tmp_env_file).set("GOOGLE_SHEETS_CREDENTIALS", json.dumps(info))
+    return info
+
+
+@pytest.fixture
 def mock_http_client() -> Callable[[Callable[[httpx.Request], httpx.Response]], httpx.Client]:
     """Return a factory that builds an ``httpx.Client`` backed by a
     ``MockTransport`` — no real network call is ever made.
