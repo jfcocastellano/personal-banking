@@ -38,24 +38,34 @@ de mocking adicional.
 
 ---
 
-## Decisión 2: Generación del JWT (PS256)
+## Decisión 2: Generación del JWT (RS256)
 
-**Decisión**: `PyJWT` (`jwt.encode(claims, private_key, algorithm="PS256")`),
-usando un objeto de clave privada RSA cargado con
+**Decisión**: `PyJWT` (`jwt.encode(claims, private_key, algorithm="RS256",
+headers={"kid": app_id})`), usando un objeto de clave privada RSA cargado con
 `cryptography.hazmat.primitives.serialization.load_pem_private_key`.
 
-**Racional**: `docs/context.md` documenta `PyJWT` como la librería elegida
-para "generación y serialización de tokens JWT ... (PS256)". `PyJWT` soporta
-`PS256` de forma nativa cuando se le pasa una clave RSA cargada vía
-`cryptography` (ya dependencia del proyecto desde IT1). No se necesita ninguna
-librería JWT adicional.
+**Actualización 2026-08-09 — verificado contra API real**: la suposición
+inicial (`PS256`, con `iss`/`aud` derivados del `app_id`/URL base) era
+incorrecta y producía `401 Unauthorized` contra `GET /aspsps` real. La
+documentación oficial (`docs.enablebanking.com/api/quick-start/`) especifica
+`RS256`, no `PS256`. `docs/context.md` (que motivó la decisión original)
+debe corregirse igualmente.
 
-**Claims del JWT** **[verificar contra documentación real]**: como mínimo
-`iss` (identidad de la aplicación / `app_id`), `iat`, `exp` (vida corta,
-p. ej. unos minutos) y `aud` (endpoint de Enable Banking). El nombre exacto de
-cada claim se aísla en una única función `_build_jwt_claims()` dentro de
-`ing.py`, de forma que un ajuste tras verificar la documentación real no
-afecte al resto del conector.
+**Racional**: `PyJWT` soporta `RS256` de forma nativa cuando se le pasa una
+clave RSA cargada vía `cryptography` (ya dependencia del proyecto desde
+IT1). No se necesita ninguna librería JWT adicional.
+
+**Claims del JWT (verificados contra API real)**:
+- `iss`: literal fijo `"enablebanking.com"` — **no** el `app_id`.
+- `aud`: literal fijo `"api.enablebanking.com"` — **no** la URL base con
+  esquema.
+- `iat`, `exp`: timestamps Unix, vida corta (el conector usa 300 s).
+- Cabecera JWT (no es un claim del payload): `kid` = `app_id` de
+  `eb-config.json`.
+
+El nombre exacto de cada claim se aísla en una única función `_build_jwt()`
+dentro de `ing.py`, de forma que futuros ajustes de protocolo no afecten al
+resto del conector.
 
 **Alternativas consideradas**:
 

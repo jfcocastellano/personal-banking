@@ -1,4 +1,4 @@
-"""ING España connector: PS256 JWT auth, PSD2 session, pagination, normalization."""
+"""ING España connector: RS256 JWT auth, PSD2 session, pagination, normalization."""
 
 import json
 import logging
@@ -20,6 +20,8 @@ logger = logging.getLogger(__name__)
 
 _BANK_NAME = "ING España"
 _BASE_URL = "https://api.enablebanking.com"
+_JWT_ISSUER = "enablebanking.com"
+_JWT_AUDIENCE = "api.enablebanking.com"
 _SESSION_ID_KEY = "ENABLE_BANKING_SESSION_ID"
 _CONFIG_DIR_ENV = "BANKING_EB_CONFIG_DIR"
 _DEFAULT_CONFIG_DIR = Path.home() / ".config" / "banca-personal"
@@ -117,15 +119,20 @@ def _load_signing_credential(config_dir: Path | None) -> _SigningCredential:
 
 
 def _build_jwt(credential: _SigningCredential) -> str:
-    """Build a short-lived PS256-signed JWT. Never logs the key or the token."""
+    """Build a short-lived RS256-signed JWT. Never logs the key or the token."""
     now = int(time.time())
     claims = {
-        "iss": credential.app_id,
-        "aud": _BASE_URL,
+        "iss": _JWT_ISSUER,
+        "aud": _JWT_AUDIENCE,
         "iat": now,
         "exp": now + _JWT_TTL_SECONDS,
     }
-    return jwt.encode(claims, credential.private_key, algorithm="PS256")
+    return jwt.encode(
+        claims,
+        credential.private_key,
+        algorithm="RS256",
+        headers={"kid": credential.app_id},
+    )
 
 
 def _parse_transaction(raw: dict[str, Any]) -> Transaction | None:

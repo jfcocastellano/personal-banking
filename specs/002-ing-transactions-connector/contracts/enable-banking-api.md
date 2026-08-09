@@ -11,21 +11,40 @@
 > Enable Banking antes de la primera ejecución real (no mockeada). Este
 > documento es la base para construir fixtures de test realistas (FR-014) y
 > para aislar el código dependiente del protocolo real en `ing.py`.
+>
+> **Actualización 2026-08-09**: la sección de Autenticación ha sido
+> verificada contra una llamada real a `GET /aspsps` (y contra
+> `docs.enablebanking.com/api/quick-start/`) y corregida — la suposición
+> original (PS256, `iss`/`aud` = `app_id`/URL base) era incorrecta y
+> producía `401 Unauthorized`. El resto del documento (paginación,
+> endpoint de transacciones, mecanismo de `session_id`) sigue sin verificar
+> contra una llamada real.
 
 ---
 
 ## Autenticación
 
-- Cada petición a la API incluye un JWT firmado con PS256 en la cabecera
-  `Authorization: Bearer <jwt>` **[verificar: nombre exacto de cabecera]**.
+**Verificado 2026-08-09** contra `GET /aspsps` real (200 OK tras la corrección):
+
+- Cada petición a la API incluye un JWT firmado con **RS256** (no PS256) en
+  la cabecera `Authorization: Bearer <jwt>`.
+- La cabecera (header) del JWT lleva `kid` = `app_id` de `eb-config.json`
+  (identificador de la aplicación registrada en Enable Banking).
+- Los claims del payload son:
+  - `iss`: literal fijo `"enablebanking.com"` (no el `app_id`).
+  - `aud`: literal fijo `"api.enablebanking.com"` (sin esquema `https://`,
+    distinto de la URL base usada para las peticiones).
+  - `iat` / `exp`: timestamps Unix; TTL corto (el conector usa 300 s;
+    la documentación oficial admite hasta 3600 s).
 - El JWT se genera por el conector en cada petición (o al inicio de la
   invocación), usando la clave privada RSA y el `app_id` de
   `eb-config.json`. No hay intercambio previo por un access token separado
-  **[verificar]**.
+  (confirmado: la llamada a `/aspsps` con el JWT directamente devuelve 200).
 - El `session_id` PSD2 identifica la autorización de consentimiento del
   usuario y se envía junto a la petición (cabecera o segmento de ruta)
   **[verificar: mecanismo exacto — se asume una cabecera `X-Session-ID` o un
-  segmento `/sessions/{session_id}/...` en la URL]**.
+  segmento `/sessions/{session_id}/...` en la URL]**. Aún no probado contra
+  el endpoint real de transacciones.
 
 ---
 

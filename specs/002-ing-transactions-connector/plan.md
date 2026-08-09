@@ -9,7 +9,7 @@
 ## Resumen
 
 Implementar un conector Python (`banking.connectors.ing`) que se autentica ante
-la API de Enable Banking mediante un JWT firmado con PS256 (clave RSA privada
+la API de Enable Banking mediante un JWT firmado con RS256 (clave RSA privada
 leída de `~/.config/banca-personal/eb-config.json`) y el `session_id` PSD2
 almacenado en el SecretStore cifrado existente (IT1). Dado un rango de fechas,
 recupera todas las páginas vía `continuation_key`, filtra solo transacciones
@@ -33,7 +33,7 @@ de logging).
 
 **Dependencias principales**:
 - `httpx` — cliente HTTP síncrono para la API de Enable Banking (producción)
-- `PyJWT` — generación de JWT firmados con PS256 usando el backend de `cryptography` (producción)
+- `PyJWT` — generación de JWT firmados con RS256 usando el backend de `cryptography` (producción)
 - `cryptography` — ya presente desde IT1; se reutiliza para cargar la clave privada RSA (`load_pem_private_key`)
 - `pytest` + `pytest-mock` — tests (dev, ya presentes)
 - `httpx.MockTransport` (o equivalente basado en `unittest.mock`) — mockeo de todas las llamadas HTTP en tests, sin dependencia adicional
@@ -189,7 +189,7 @@ Racional completo y alternativas en `research.md`.
 | Decisión | Elección | Razón clave |
 |----------|----------|-------------|
 | Cliente HTTP | `httpx.Client` (síncrono) | Ya documentado como librería principal en `docs/context.md`; soporta `MockTransport` nativo para tests sin dependencia extra |
-| Librería JWT | `PyJWT` con backend `cryptography` (PS256) | Documentado en `docs/context.md`; soporta RSA-PSS-SHA256 directamente con una clave `cryptography` ya cargada |
+| Librería JWT | `PyJWT` con backend `cryptography` (RS256) | Verificado contra API real 2026-08-09 (la suposición inicial PS256 daba 401); `PyJWT` soporta RS256 directamente con una clave `cryptography` ya cargada |
 | Forma de la interfaz pública | Clase `IngConnector` con cliente HTTP inyectable | Permite inyectar un `httpx.Client(transport=MockTransport(...))` en tests (FR-014), mismo patrón de clase que `SecretStore` (IT1) |
 | Detección de sesión inutilizable | HTTP 403 **o** campo de estado con valor `expired` en la respuesta, verificado en un único punto antes de cualquier retorno de datos | FR-004; aísla la incertidumbre sobre el nombre exacto del campo en una sola función, ajustable sin tocar el resto del conector |
 | Detección de límite de tasa | HTTP 429 en cualquier petición (inicial o de paginación) | FR-008; distinto del error de re-autorización |

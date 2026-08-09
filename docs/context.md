@@ -83,7 +83,7 @@ Enable Banking como agregador PSD2. Actúa de intermediario entre el proceso y l
 
 | Aspecto | Detalle |
 |---------|---------|
-| Autenticación | JWT firmado con clave RSA privada (PS256 / RSA-PSS-SHA256) |
+| Autenticación | JWT firmado con clave RSA privada (RS256; verificado contra API real 2026-08-09) |
 | Flujo de consentimiento | OAuth2/PSD2 browser-based, una sola vez; obtiene `session_id` válido 90-180 días |
 | Ciclo de vida de sesión | `session_id` con validez 90-180 días; no existen refresh tokens — al expirar requiere re-autorización manual |
 | Límite de tasa PSD2 | Máximo 4 peticiones de información de cuenta por día por cuenta (regulación europea) |
@@ -106,8 +106,8 @@ Gmail SMTP con contraseña de aplicación (requiere 2FA activo en la cuenta Goog
 | `google-auth`    | Autenticación service account                      |
 | `httpx`          | Cliente HTTP para Enable Banking API               |
 | `python-dotenv`  | Carga de fichero `.env`                            |
-| `cryptography`   | Encriptación AES-256 de secretos locales y firma JWT RSA-PSS-SHA256 (Enable Banking) |
-| `PyJWT`          | Generación y serialización de tokens JWT para autenticación Enable Banking (PS256) |
+| `cryptography`   | Encriptación AES-256 de secretos locales y firma JWT RSA (RS256, Enable Banking) |
+| `PyJWT`          | Generación y serialización de tokens JWT para autenticación Enable Banking (RS256) |
 | `pytest`         | Framework de tests                                 |
 | `pytest-mock`    | Mocking en tests                                   |
 | `ruff`           | Linting y formateo                                 |

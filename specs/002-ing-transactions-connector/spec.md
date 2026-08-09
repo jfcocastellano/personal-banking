@@ -178,9 +178,10 @@ motivo.
 ### Requisitos Funcionales
 
 - **FR-001**: El conector DEBE autenticarse ante la API de Enable Banking
-  generando un JWT firmado con el algoritmo PS256 (RSA-PSS-SHA256),
-  utilizando la clave privada RSA presente en
-  `~/.config/banca-personal/eb-config.json`.
+  generando un JWT firmado con el algoritmo RS256, utilizando la clave
+  privada RSA presente en `~/.config/banca-personal/eb-config.json` (nota:
+  verificado contra API real el 2026-08-09; la versión original de este
+  requisito indicaba PS256, que produce `401 Unauthorized`).
 - **FR-002**: El conector DEBE leer el `session_id` PSD2 almacenado para la
   cuenta ING España desde los secretos de configuración cifrados del
   proyecto (mediante el mecanismo SecretStore existente); NO DEBE solicitar
@@ -251,7 +252,7 @@ motivo.
   revocada, momento en el cual solo una re-autorización manual y puntual por
   navegador puede restablecer el acceso.
 - **Credencial de firma**: La clave privada RSA y la identidad de
-  aplicación asociada, usadas para generar un JWT firmado con PS256 en cada
+  aplicación asociada, usadas para generar un JWT firmado con RS256 en cada
   autenticación ante la API, leídas del fichero de configuración local.
 - **Transacción**: Un movimiento de cuenta liquidado (estado `BOOK`), con
   una clave de deduplicación compuesta por fecha de liquidación, importe y
