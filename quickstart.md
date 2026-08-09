@@ -228,7 +228,7 @@ Get-Content "$env:USERPROFILE\.config\banca-personal\eb-config.json"
 
 The `eb-config.json` placeholder created in Step 9 above is now used for real:
 `app_id` and `private_key_path` are read by the ING España connector
-(`banking.connectors.ing.IngConnector`) to sign PS256 JWTs against the Enable
+(`banking.connectors.ing.IngConnector`) to sign RS256 JWTs against the Enable
 Banking API. Replace the placeholder `app_id` with your real Enable Banking
 application ID, and place your real RSA private key at `private_key_path`
 before attempting any real (non-mocked) run.
@@ -244,8 +244,33 @@ For the full validation guide (mocked scenarios for CI, plus an optional
 manual run against a real session), see
 `specs/002-ing-transactions-connector/quickstart.md`.
 
+---
+
+## IT3 — Escritor de Google Sheets
+
+The `GOOGLE_SHEETS_CREDENTIALS=enc:placeholder` entry in `.env.example`
+(added in IT1) is now used for real: `banking.sheets.writer.SheetsWriter`
+reads this secret (the JSON of a Google Cloud service account) to
+authenticate with the Google Sheets API via `gspread`, and writes generic
+tabular data (headers + rows) to a document/tab given as parameters —
+creating the tab if it doesn't exist, or overwriting it completely if it
+does. It has no knowledge of banking data; the column layout is decided by
+whichever iteration integrates it with real transactions (IT4).
+
+Store your real service account JSON the same way as any other secret:
+
+```bash
+python -m banking secrets set GOOGLE_SHEETS_CREDENTIALS "$(cat your-service-account.json)"
+```
+
+For the full validation guide (mocked scenarios for CI, plus an optional
+manual run against a real document already shared with the service
+account), see `specs/003-google-sheets-writer/quickstart.md`.
+
 ## Notes
 
 - `.env` is git-ignored — never commit it
 - `BANKING_MASTER_KEY` must never appear in any file — only in your OS environment
 - The `eb-config.json` placeholder was replaced with real credentials during IT2
+- The `GOOGLE_SHEETS_CREDENTIALS` placeholder was replaced with a real service
+  account JSON during IT3
