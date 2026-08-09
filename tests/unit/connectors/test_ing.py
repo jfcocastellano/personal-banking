@@ -487,3 +487,7 @@ def test_invalid_private_key_raises_connector_config_error(
     connector = IngConnector(http_client=mock_http_client(handler))
     with pytest.raises(ConnectorConfigError):
         connector.fetch_transactions(date(2026, 8, 1), date(2026, 8, 31))
+
+
+def test_bank_name_is_a_public_class_attribute() -> None:
+    assert IngConnector.BANK_NAME == "ING España"

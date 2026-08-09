@@ -197,6 +197,8 @@ def _check_session_usable(response: httpx.Response) -> None:
 class IngConnector:
     """Connector for ING España accounts via the Enable Banking PSD2 API."""
 
+    BANK_NAME: str = _BANK_NAME
+
     def __init__(
         self, http_client: httpx.Client | None = None, config_dir: Path | None = None
     ) -> None:

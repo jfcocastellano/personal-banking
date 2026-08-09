@@ -267,6 +267,32 @@ For the full validation guide (mocked scenarios for CI, plus an optional
 manual run against a real document already shared with the service
 account), see `specs/003-google-sheets-writer/quickstart.md`.
 
+---
+
+## IT4 — Pipeline ING → Sheets (primer resultado demostrable)
+
+`python -m banking sync` connects the two previous iterations end to end:
+it fetches this month's settled ING movements (day 1 through today), maps
+each one to a fixed-column row (`Fecha de liquidación, Banco, Descripción,
+Importe, Divisa`), and overwrites the `YYYY-MM` tab of the document
+identified by the `GOOGLE_SHEET_ID` secret (reserved since IT1, now
+consumed for the first time). Running it again the same day is
+idempotent — the tab is fully rewritten, never appended to.
+
+The `GOOGLE_SHEET_ID=enc:placeholder` entry in `.env.example` is now used
+for real:
+
+```bash
+python -m banking secrets set GOOGLE_SHEET_ID <your-real-document-id>
+python -m banking sync
+```
+
+On success it prints a one-line summary (bank, rows written, tab,
+duration) and exits `0`. On failure it exits `1` if ING was the cause, or
+`2` if Google Sheets was — see `specs/004-ing-sheets-sync/quickstart.md`
+for the full validation guide (mocked scenarios for CI, plus an optional
+manual run against real ING/Sheets credentials).
+
 ## Notes
 
 - `.env` is git-ignored — never commit it
@@ -274,3 +300,4 @@ account), see `specs/003-google-sheets-writer/quickstart.md`.
 - The `eb-config.json` placeholder was replaced with real credentials during IT2
 - The `GOOGLE_SHEETS_CREDENTIALS` placeholder was replaced with a real service
   account JSON during IT3
+- The `GOOGLE_SHEET_ID` placeholder was replaced with a real document ID during IT4
