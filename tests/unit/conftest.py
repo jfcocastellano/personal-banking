@@ -108,9 +108,21 @@ def google_sheets_credentials_in_store(
 def mock_http_client() -> Callable[[Callable[[httpx.Request], httpx.Response]], httpx.Client]:
     """Return a factory that builds an ``httpx.Client`` backed by a
     ``MockTransport`` — no real network call is ever made.
+
+    Automatically answers the connector's account-resolution call
+    (``GET /sessions/{session_id}``) with a single linked account, so
+    individual tests only need to handle the transactions endpoint.
     """
 
     def _make(handler: Callable[[httpx.Request], httpx.Response]) -> httpx.Client:
-        return httpx.Client(transport=httpx.MockTransport(handler))
+        def _dispatch(request: httpx.Request) -> httpx.Response:
+            segments = request.url.path.strip("/").split("/")
+            if request.method == "GET" and segments[:1] == ["sessions"] and len(segments) == 2:
+                return httpx.Response(
+                    200, json={"status": "AUTHORIZED", "accounts": ["test-account-id"]}
+                )
+            return handler(request)
+
+        return httpx.Client(transport=httpx.MockTransport(_dispatch))
 
     return _make

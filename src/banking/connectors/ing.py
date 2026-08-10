@@ -135,6 +135,13 @@ def _build_jwt(credential: _SigningCredential) -> str:
     )
 
 
+def _join_remittance_information(raw_remittance: object) -> str:
+    """Enable Banking returns ``remittance_information`` as a list of lines."""
+    if isinstance(raw_remittance, list):
+        return " ".join(str(line) for line in raw_remittance)
+    return str(raw_remittance) if raw_remittance else ""
+
+
 def _parse_transaction(raw: dict[str, Any]) -> Transaction | None:
     """Parse one API transaction record into a Transaction, or None if malformed."""
     try:
@@ -143,7 +150,7 @@ def _parse_transaction(raw: dict[str, Any]) -> Transaction | None:
         magnitude = Decimal(str(amount_block["amount"]))
         currency = amount_block["currency"]
         booking_date = date.fromisoformat(raw["booking_date"])
-        description = raw.get("remittance_information", "")
+        description = _join_remittance_information(raw.get("remittance_information", []))
     except (KeyError, InvalidOperation, ValueError) as exc:
         logger.warning("Skipping transaction record with missing or invalid fields: %s", exc)
         return None
@@ -205,6 +212,35 @@ class IngConnector:
         self._http_client = http_client if http_client is not None else httpx.Client()
         self._config_dir = config_dir
 
+    def _resolve_account_id(
+        self, credential: _SigningCredential, session_id: str, start_date: date, end_date: date
+    ) -> str:
+        """Look up the session's linked account, translating unusable-session errors."""
+        token = _build_jwt(credential)
+        response = self._http_client.get(
+            f"{_BASE_URL}/sessions/{session_id}", headers={"Authorization": f"Bearer {token}"}
+        )
+        try:
+            _check_session_usable(response)
+        except (
+            ReauthorizationRequiredError,
+            RateLimitExceededError,
+            EnableBankingAPIError,
+        ) as exc:
+            logger.error(
+                "Connector %s: range %s to %s, status=error, reason=%s",
+                _BANK_NAME,
+                start_date.isoformat(),
+                end_date.isoformat(),
+                exc,
+            )
+            raise
+
+        accounts = response.json().get("accounts") or []
+        if not accounts:
+            raise EnableBankingAPIError("Enable Banking session has no linked accounts.")
+        return str(accounts[0])
+
     def fetch_transactions(self, start_date: date, end_date: date) -> list[Transaction]:
         """Return all settled (BOOK) transactions in [start_date, end_date]."""
         if start_date > end_date:
@@ -215,10 +251,11 @@ class IngConnector:
 
         credential = _load_signing_credential(self._config_dir)
         session_id = SecretStore().get(_SESSION_ID_KEY)
+        account_id = self._resolve_account_id(credential, session_id, start_date, end_date)
 
         results: dict[tuple[date, Decimal, str], Transaction] = {}
         continuation_key: str | None = None
-        url = f"{_BASE_URL}/sessions/{session_id}/transactions"
+        url = f"{_BASE_URL}/accounts/{account_id}/transactions"
 
         for _page_number in range(_MAX_PAGES):
             token = _build_jwt(credential)

@@ -33,7 +33,7 @@ def _raw_tx(
         "booking_date": booking_date,
         "transaction_amount": {"amount": amount, "currency": currency},
         "credit_debit_indicator": indicator,
-        "remittance_information": description,
+        "remittance_information": [description] if description else [],
     }
 
 
