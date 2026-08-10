@@ -16,9 +16,23 @@
 > verificada contra una llamada real a `GET /aspsps` (y contra
 > `docs.enablebanking.com/api/quick-start/`) y corregida — la suposición
 > original (PS256, `iss`/`aud` = `app_id`/URL base) era incorrecta y
-> producía `401 Unauthorized`. El resto del documento (paginación,
-> endpoint de transacciones, mecanismo de `session_id`) sigue sin verificar
-> contra una llamada real.
+> producía `401 Unauthorized`.
+>
+> **Actualización 2026-08-10**: primera ejecución real de extremo a
+> extremo (IT4, `python -m banking sync`) contra una sesión PSD2 real de
+> ING España. Reveló dos discrepancias con lo asumido más abajo, ya
+> corregidas en `ing.py`:
+> - El `session_id` **no** se usa directamente en la URL de transacciones.
+>   Hay que resolver primero el `account_id` vía `GET /sessions/{session_id}`
+>   (devuelve `{"status", "accounts": [account_id, ...]}`); el conector usa
+>   el primer `account_id` de esa lista.
+> - El endpoint de transacciones real es `GET /accounts/{account_id}/transactions`
+>   (no `GET /sessions/{session_id}/transactions`, que devuelve `404`).
+> - `remittance_information` es una **lista** de líneas de texto, no un
+>   string plano; el conector las une con espacios.
+> - `GET /aspsps` exige la cabecera `psu-ip-address` para el ASPSP `ING`/`ES`
+>   (visible en `required_psu_headers`), relevante para `POST /auth` (fuera
+>   del alcance de este conector — ver nota más abajo).
 
 ---
 
@@ -41,14 +55,40 @@
   `eb-config.json`. No hay intercambio previo por un access token separado
   (confirmado: la llamada a `/aspsps` con el JWT directamente devuelve 200).
 - El `session_id` PSD2 identifica la autorización de consentimiento del
-  usuario y se envía junto a la petición (cabecera o segmento de ruta)
-  **[verificar: mecanismo exacto — se asume una cabecera `X-Session-ID` o un
-  segmento `/sessions/{session_id}/...` en la URL]**. Aún no probado contra
-  el endpoint real de transacciones.
+  usuario. **Verificado 2026-08-10**: no se usa directamente en la URL de
+  transacciones — primero hay que resolver el `account_id` vía
+  `GET /sessions/{session_id}`.
 
 ---
 
-## Endpoint de transacciones (asumido)
+## Resolución de cuenta (verificado 2026-08-10)
+
+```
+GET /sessions/{session_id}
+Authorization: Bearer <jwt>
+```
+
+Respuesta (200):
+
+```json
+{
+  "status": "AUTHORIZED",
+  "accounts": ["<account_id>"],
+  "accounts_data": ["..."],
+  "aspsp": {"name": "ING", "country": "ES"},
+  "access": {"transactions": true, "balances": true, "valid_until": "..."}
+}
+```
+
+El conector usa el primer elemento de `accounts`. Igual que las llamadas de
+transacciones, esta respuesta pasa por la misma comprobación de sesión
+utilizable (`403` → `ReauthorizationRequiredError`, `429` →
+`RateLimitExceededError`, cuerpo `200` con `status: expired` →
+`ReauthorizationRequiredError`).
+
+---
+
+## Endpoint de transacciones (verificado 2026-08-10)
 
 ```
 GET /accounts/{account_id}/transactions
@@ -58,11 +98,7 @@ GET /accounts/{account_id}/transactions
 Authorization: Bearer <jwt>
 ```
 
-**[verificar]**: ruta exacta, nombres de parámetros de fecha, y si
-`account_id` es necesario explícitamente o se resuelve implícitamente a
-partir del `session_id`.
-
-### Respuesta (200, forma asumida)
+### Respuesta (200, verificada contra una cuenta ING España real)
 
 ```json
 {
@@ -75,12 +111,15 @@ partir del `session_id`.
         "currency": "EUR"
       },
       "credit_debit_indicator": "CRDT",
-      "remittance_information": "Descripción de la transacción"
+      "remittance_information": ["Descripción de la transacción"]
     }
   ],
   "continuation_key": "opaque-string-or-null"
 }
 ```
+
+`remittance_information` es una **lista** de líneas (verificado contra la
+API real); el conector las une con espacios en `Transaction.description`.
 
 **Campos usados por el conector**:
 
