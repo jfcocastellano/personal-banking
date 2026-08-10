@@ -4,9 +4,10 @@
 
 Implementar y desplegar un proceso Python que, ejecutándose diariamente
 en GitHub Actions, recupere los movimientos del mes en curso de ING,
-Revolut y MyInvestor mediante Enable Banking (agregador PSD2), y los
-escriba en un Google Sheet organizado en pestañas mensuales — con
-notificación automática por email ante cualquier fallo parcial o total.
+Revolut, MyInvestor y Banco Sabadell mediante Enable Banking (agregador
+PSD2), y los escriba en un Google Sheet organizado en pestañas
+mensuales — con notificación automática por email ante cualquier fallo
+parcial o total.
 
 El sistema se considera completo cuando: (a) corre sin intervención
 humana todos los días, (b) la pestaña del mes en curso refleja todos
@@ -281,22 +282,22 @@ IT5 solo necesita el patrón de IT2; IT6 necesita el pipeline de IT4.
 
 ## Iteración 5: Multi-banco con resiliencia parcial
 
-- **Valor entregado**: El proceso sincroniza los tres bancos (ING,
-  Revolut y MyInvestor) en una sola ejecución. Si un banco falla, los
-  datos de los demás se escriben igualmente y el fallo queda registrado
-  para notificación posterior.
+- **Valor entregado**: El proceso sincroniza los cuatro bancos (ING,
+  Revolut, MyInvestor y Banco Sabadell) en una sola ejecución. Si un
+  banco falla, los datos de los demás se escriben igualmente y el
+  fallo queda registrado para notificación posterior.
 
 - **Definition of Done**:
-  - Conectores para Revolut y MyInvestor siguiendo el mismo contrato
-    que el conector ING
-  - El pipeline ejecuta los tres conectores de forma independiente y
+  - Conectores para Revolut, MyInvestor y Banco Sabadell siguiendo el
+    mismo contrato que el conector ING
+  - El pipeline ejecuta los cuatro conectores de forma independiente y
     en secuencia
   - Fallo de un conector: error registrado en resumen de fallos, proceso
     continúa con los siguientes, datos de bancos exitosos se escriben
     en Sheets sin abortar
   - Al finalizar: resumen con bancos sincronizados (y movimientos),
     bancos fallidos (con motivo), total de movimientos escritos
-  - Tests obligatorios: todos ok / un banco falla y los otros dos
+  - Tests obligatorios: todos ok / un banco falla y los otros tres
     continúan / todos fallan
   - CI verde
 
@@ -304,18 +305,21 @@ IT5 solo necesita el patrón de IT2; IT6 necesita el pipeline de IT4.
 
 - **Riesgos**:
   - ⚠️ MyInvestor puede no estar soportado por Enable Banking; si no
-    lo está, cerrar la iteración con ING + Revolut y abrir issue de
-    investigación para MyInvestor
+    lo está, cerrar la iteración con ING + Revolut + Sabadell y abrir
+    issue de investigación para MyInvestor
   - Revolut puede requerir un flujo PSD2 distinto al de ING
+  - Banco Sabadell debe verificarse contra `GET /aspsps` antes de
+    implementar su conector (mismo patrón de verificación ya aplicado a
+    ING en IT2); no garantizado hasta confirmarlo
   - Cada banco requiere un `session_id` propio (consentimiento
     independiente), lo que añade complejidad al setup inicial
 
 - **Prompt para `/speckit-specify`**:
 
   ```
-  Extiende el pipeline de sincronización para soportar tres entidades
-  bancarias de forma resiliente: ING, Revolut y MyInvestor, todas via
-  Enable Banking como agregador PSD2.
+  Extiende el pipeline de sincronización para soportar cuatro entidades
+  bancarias de forma resiliente: ING, Revolut, MyInvestor y Banco
+  Sabadell, todas via Enable Banking como agregador PSD2.
 
   El proceso debe:
   - Ejecutar el conector de cada banco de forma independiente y en
@@ -332,7 +336,7 @@ IT5 solo necesita el patrón de IT2; IT6 necesita el pipeline de IT4.
     excepción no controlada
 
   Escenarios de test obligatorios: todos ok, un banco falla y los otros
-  dos continúan, todos los bancos fallan. Todos los tests deben mockear
+  tres continúan, todos los bancos fallan. Todos los tests deben mockear
   las APIs externas.
 
   El objetivo es que el proceso sea resiliente a indisponibilidades
