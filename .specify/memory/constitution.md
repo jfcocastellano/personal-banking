@@ -1,20 +1,20 @@
 <!--
 SYNC IMPACT REPORT
 ==================
-Version change: N/A (initial) → 1.0.0
-Added sections:
-  - Core Principles (I through VII)
-  - Security Requirements
-  - Performance & Observability
-  - Development Workflow
-  - Anti-Patterns
-  - Governance
-Modified principles: N/A (initial creation)
-Removed sections: N/A
+Version change: 1.0.0 → 1.0.1
+Added sections: None
+Modified principles:
+  - V. Partial Resilience: connector list expanded (ING, Revolut, MyInvestor)
+    → (ING, Revolut, MyInvestor, Sabadell) — scope clarification, no behavioral
+    redefinition
+Modified sections:
+  - Performance & Observability: "Full sync duration (all 3 banks)" SLO →
+    "all 4 banks", consistent with the Principle V connector list
+Removed sections: None
 Templates updated:
-  - .specify/templates/plan-template.md: Constitution Check gates replaced ✅
-  - .specify/templates/tasks-template.md: Tests marked MANDATORY per Principle II ✅
-  - .specify/templates/spec-template.md: No changes required ✅
+  - .specify/templates/plan-template.md: No bank-specific references ✅ (no change needed)
+  - .specify/templates/tasks-template.md: No bank-specific references ✅ (no change needed)
+  - .specify/templates/spec-template.md: No bank-specific references ✅ (no change needed)
 Deferred TODOs: None
 -->
 
@@ -82,7 +82,7 @@ secret is a critical security incident with no recovery path.
 A single bank connector failure MUST NOT abort the full synchronisation.
 Required behavior:
 
-- Each connector (ING, Revolut, MyInvestor) executes independently in sequence
+- Each connector (ING, Revolut, MyInvestor, Sabadell) executes independently in sequence
 - On connector failure: log the error, continue with remaining connectors,
   accumulate failures
 - After all connectors complete: if any failed, send a single aggregated error email
@@ -154,7 +154,7 @@ Beyond Principle IV, the following MUST be enforced:
 
 | Metric | Target |
 |--------|--------|
-| Full sync duration (all 3 banks) | < 2 minutes end-to-end |
+| Full sync duration (all 4 banks) | < 2 minutes end-to-end |
 | GitHub Actions job timeout | Configured at **10 minutes** (hard kill via `timeout-minutes`) |
 | Error email delivery | < 60 seconds after failure detection |
 | Google Sheets write per month tab | < 30 seconds |
@@ -257,4 +257,4 @@ in this repository. In case of conflict, this document wins.
 - `docs/context.md` MUST stay in sync with any architectural decision that changes
   the project context
 
-**Version**: 1.0.0 | **Ratified**: 2026-06-16 | **Last Amended**: 2026-06-16
+**Version**: 1.0.1 | **Ratified**: 2026-06-16 | **Last Amended**: 2026-08-10

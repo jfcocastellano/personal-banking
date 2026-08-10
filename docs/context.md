@@ -2,20 +2,20 @@
 
 > **Fuente de verdad del proyecto.** Este documento debe mantenerse actualizado ante cualquier cambio de requisitos, stack o decisiones de diseño.
 >
-> Última actualización: 2026-06-16
+> Última actualización: 2026-08-10
 
 ---
 
 ## 1. Visión y Propósito
 
 **Descripción general**
-Proceso automatizado que consulta los movimientos bancarios del mes en curso de tres entidades financieras (ING, Revolut y MyInvestor) a través de sus APIs, y los consolida en un documento Google Sheets. El objetivo es disponer de un cuadro de control mensual de ingresos y gastos, actualizado automáticamente sin intervención manual.
+Proceso automatizado que consulta los movimientos bancarios del mes en curso de cuatro entidades financieras (ING, Revolut, MyInvestor y Banco Sabadell) a través de sus APIs, y los consolida en un documento Google Sheets. El objetivo es disponer de un cuadro de control mensual de ingresos y gastos, actualizado automáticamente sin intervención manual.
 
 **Comportamiento central**
 Cada mes tiene su propia pestaña en el Google Sheet (ej. `2026-06`). Durante el mes en curso, cada ejecución sobreescribe el contenido de esa pestaña con todos los movimientos desde el día 1 hasta la fecha de ejecución. Al inicio de un nuevo mes, el proceso crea automáticamente la pestaña correspondiente. Las pestañas de meses anteriores no se modifican y actúan como histórico permanente.
 
 **Entidades bancarias en scope (v1)**
-ING, Revolut, MyInvestor.
+ING, Revolut, MyInvestor, Banco Sabadell.
 
 ---
 
@@ -75,7 +75,7 @@ GitHub Actions. El scheduling lo gestiona el workflow YAML (`schedule: cron`). E
 Enable Banking como agregador PSD2. Actúa de intermediario entre el proceso y las entidades (ING, Revolut, MyInvestor), abstrayendo las diferencias entre sus APIs individuales.
 
 > ⚠️ **Riesgos a validar antes de implementar:**
-> - Confirmar que Enable Banking soporta las tres entidades, especialmente MyInvestor (entidad española de menor tamaño, no garantizado en agregadores PSD2).
+> - Confirmar que Enable Banking soporta las cuatro entidades, especialmente MyInvestor (entidad española de menor tamaño, no garantizado en agregadores PSD2). Banco Sabadell es una entidad grande y su soporte PSD2 vía Enable Banking se da por probable, pero debe verificarse con `GET /aspsps` antes de implementar su conector (mismo patrón que la verificación ya hecha para ING).
 > - Las sesiones PSD2 expiran cada 90-180 días y requieren re-autorización manual (flujo browser); no hay refresh automático.
 > - El rate limit PSD2 de 4 peticiones/cuenta/día limita a 1 sincronización real por día en testing.
 
