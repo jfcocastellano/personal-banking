@@ -293,6 +293,38 @@ duration) and exits `0`. On failure it exits `1` if ING was the cause, or
 for the full validation guide (mocked scenarios for CI, plus an optional
 manual run against real ING/Sheets credentials).
 
+---
+
+## IT5 — Sincronización multi-banco con resiliencia parcial
+
+`python -m banking sync` now orchestrates all four banks in scope (ING,
+Revolut, MyInvestor, Banco Sabadell) in a single run, each via its own
+Enable Banking PSD2 connector. Every bank runs independently, in that
+fixed order: a single bank's failure is logged and does not abort the
+run, and the movements of every bank that succeeded are combined into
+one write to the current month's `YYYY-MM` tab.
+
+**One-time migration**: the ING session ID key changed from
+`ENABLE_BANKING_SESSION_ID` (unsuffixed) to `ENABLE_BANKING_SESSION_ID_ING`.
+Re-store the existing session ID under the new key (the `app_id`/private
+key in `eb-config.json` are unchanged and shared across all four banks):
+
+```bash
+python -m banking secrets set ENABLE_BANKING_SESSION_ID_ING <your-existing-ing-session-id>
+python -m banking secrets set ENABLE_BANKING_SESSION_ID_REVOLUT <revolut-session-id>
+python -m banking secrets set ENABLE_BANKING_SESSION_ID_MYINVESTOR <myinvestor-session-id>
+python -m banking secrets set ENABLE_BANKING_SESSION_ID_SABADELL <sabadell-session-id>
+```
+
+The exit code now distinguishes four outcomes: `0` full success (all four
+banks synced), `1` total failure (all four banks failed, nothing written),
+`2` a Google Sheets write failure (after at least one bank succeeded), and
+`3` partial failure (at least one bank succeeded and at least one failed,
+with the successful banks' data written regardless). See
+`specs/005-multi-bank-resilient-sync/quickstart.md` for the full
+validation guide (mocked scenarios for CI, plus an optional manual run
+against real credentials for all four banks).
+
 ## Notes
 
 - `.env` is git-ignored — never commit it
@@ -301,3 +333,7 @@ manual run against real ING/Sheets credentials).
 - The `GOOGLE_SHEETS_CREDENTIALS` placeholder was replaced with a real service
   account JSON during IT3
 - The `GOOGLE_SHEET_ID` placeholder was replaced with a real document ID during IT4
+- The single `ENABLE_BANKING_SESSION_ID` placeholder was replaced by four
+  per-bank keys (`ENABLE_BANKING_SESSION_ID_ING`/`_REVOLUT`/`_MYINVESTOR`/
+  `_SABADELL`) during IT5; `ENABLE_BANKING_APP_ID`/`eb-config.json` remain
+  shared across all four banks
