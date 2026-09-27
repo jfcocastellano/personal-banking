@@ -33,6 +33,9 @@ htmlcov/
 *.iml
 .vscode/
 
+# Spec Kit transient cache
+.specify/integrations/.cache/
+
 # OS
 .DS_Store
 Thumbs.db
