@@ -28,7 +28,7 @@ def main() -> None:
         print()
         print("Commands:")
         print("  secrets   Manage encrypted configuration secrets")
-        print("  sync      Fetch this month's ING movements and write them to Google Sheets")
+        print("  sync      Fetch this month's movements from all four banks and write to Sheets")
         print()
         print("Run 'banking <command> --help' for more information.")
         sys.exit(0)
