@@ -2,7 +2,28 @@
 
 > **Fuente de verdad del proyecto.** Este documento debe mantenerse actualizado ante cualquier cambio de requisitos, stack o decisiones de diseño.
 >
-> Última actualización: 2026-08-10
+> Última actualización: 2026-10-15
+
+---
+
+## Estado actual de la implementación
+
+Las secciones 1–5 describen el **contrato objetivo** del proyecto. No hay que confundirlo con lo ya construido:
+
+| Iteración | Alcance | Estado |
+|-----------|---------|--------|
+| IT1 | Skeleton del proyecto y pipeline CI | Implementada |
+| IT2 | Conector Enable Banking (ING) | Implementada |
+| IT3 | Writer de Google Sheets | Implementada |
+| IT4 | Pipeline ING → Sheets (MVP) | Implementada |
+| IT5 | Multi-banco con resiliencia parcial | Implementada |
+| IT6 | Notificación de errores por email | **Pendiente** |
+| IT7 | Scheduler en GitHub Actions | **Pendiente** (depende de IT6) |
+
+Así, de lo descrito más abajo todavía **no está construido**: el scheduler automático (UC1), el disparo manual vía `workflow_dispatch` (UC2) ni la notificación por email ante fallo (UC3). La planificación vive en `docs/roadmap.md`.
+
+**Observabilidad**
+Implementada en `src/banking/logging_config.py`. El entry point de la CLI instala sobre el logger raíz el formato exigido por la constitución (`%(asctime)s %(levelname)s %(name)s: %(message)s`) y resuelve el nivel desde la variable de entorno `LOG_LEVEL` (por defecto `INFO`; un valor no reconocido cae a `INFO`, para que un error de tipeo no aborte una sincronización). Importar `banking` nunca reconfigura el logging de la aplicación anfitriona.
 
 ---
 
@@ -90,7 +111,7 @@ Enable Banking como agregador PSD2. Actúa de intermediario entre el proceso y l
 | Filtrado de transacciones | Solo sincronizar `status: BOOK`; ignorar `PDNG` (pendientes) e `INFO` (informativas) |
 | Sentido del movimiento | `DBIT` = cargo/gasto; `CRDT` = abono/ingreso |
 | Paginación | Parámetro `continuation_key` en el endpoint de transacciones |
-| Config local | `~/.config/banca-personal/eb-config.json` (`app_id` + ruta a clave RSA); `eb-session.json` (session_id activo) |
+| Config local | `~/.config/banca-personal/eb-config.json` (`app_id` + ruta a clave RSA). Los `session_id` (uno por banco) y el resto de secretos se leen del `SecretStore` cifrado, respaldado por el fichero `.env` |
 
 **Google Sheets**
 Autenticación mediante cuenta de servicio de Google Cloud (service account). El JSON de credenciales se almacena como GitHub Secret. El Sheet se comparte con el email de la cuenta de servicio. No requiere intervención humana en ninguna ejecución.
@@ -104,13 +125,15 @@ Gmail SMTP con contraseña de aplicación (requiere 2FA activo en la cuenta Goog
 |------------------|----------------------------------------------------|
 | `gspread`        | Integración con Google Sheets, incluida la autenticación con cuenta de servicio vía `service_account_from_dict()` (`google-auth` se usa transitivamente, no se importa directamente — IT3) |
 | `httpx`          | Cliente HTTP para Enable Banking API               |
-| `python-dotenv`  | Carga de fichero `.env`                            |
 | `cryptography`   | Encriptación AES-256 de secretos locales y firma JWT RSA (RS256, Enable Banking) |
 | `PyJWT`          | Generación y serialización de tokens JWT para autenticación Enable Banking (RS256) |
 | `pytest`         | Framework de tests                                 |
 | `pytest-mock`    | Mocking en tests                                   |
 | `ruff`           | Linting y formateo                                 |
 | `mypy`           | Type checking estático                             |
+| `pip-audit`      | Auditoría de vulnerabilidades en dependencias (gate de CI) |
+
+> El fichero `.env` lo parsea y escribe el propio `SecretStore` (`src/banking/config/secret_store.py`) con la librería estándar: el proyecto **no** usa `python-dotenv`.
 
 **Dependencias de infraestructura externa**
 Enable Banking (cuenta y API key necesarias), Google Cloud (proyecto con Sheets API habilitada, service account), cuenta Gmail con 2FA.
