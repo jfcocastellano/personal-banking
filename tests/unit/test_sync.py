@@ -1,6 +1,7 @@
 """Tests for the multi-bank sync pipeline (banking.sync)."""
 
 import logging
+from collections.abc import Sequence
 from datetime import date
 from decimal import Decimal
 from unittest.mock import Mock
@@ -11,6 +12,7 @@ import pytest
 from banking.connectors.enable_banking import (
     ConnectorConfigError,
     EnableBankingAPIError,
+    EnableBankingConnector,
     PaginationLimitExceededError,
     RateLimitExceededError,
     ReauthorizationRequiredError,
@@ -27,7 +29,14 @@ from banking.sheets.writer import (
     SheetsQuotaExceededError,
     SheetsWriter,
 )
-from banking.sync import AllBanksFailedError, BankOutcome, OverallStatus, SheetsSyncError, run_sync
+from banking.sync import (
+    AllBanksFailedError,
+    BankOutcome,
+    NoConnectorsError,
+    OverallStatus,
+    SheetsSyncError,
+    run_sync,
+)
 
 _HEADERS = ["Fecha de liquidación", "Banco", "Descripción", "Importe", "Divisa"]
 
@@ -313,3 +322,49 @@ def test_run_sync_sheets_failure_logs_error_without_leaking_document_id(
     message = " ".join(r.getMessage() for r in error_records)
     assert "sheets" in message.lower()
     assert "secret-doc-id" not in message
+
+
+# --- Guarda de invariante: un sync sin conectores no es un exito -------------
+
+
+@pytest.mark.parametrize(
+    "empty_connectors",
+    [pytest.param([], id="empty-list"), pytest.param((), id="empty-tuple")],
+)
+def test_run_sync_requires_at_least_one_connector(
+    empty_connectors: Sequence[EnableBankingConnector],
+) -> None:
+    """An empty connector sequence is a programming error, never a success.
+
+    Reproduces the verified data-loss path: `_classify([])` returned
+    FULL_SUCCESS because `all([])` is True, so the run reported success while
+    clearing the month's tab by writing zero rows.
+    """
+    writer = Mock(spec=SheetsWriter)
+
+    with pytest.raises(NoConnectorsError) as excinfo:
+        run_sync(
+            connectors=empty_connectors,
+            writer=writer,
+            document_id="doc-id",
+            today=date(2026, 8, 15),
+        )
+
+    writer.write.assert_not_called()
+    assert issubclass(NoConnectorsError, ValueError)
+    assert "connector" in str(excinfo.value)
+
+
+def test_run_sync_rejects_empty_connectors_before_touching_configuration(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The guard fires before any credential lookup, so nothing is read or written."""
+
+    class _ExplodingSecretStore:
+        def get(self, key: str) -> str:
+            raise AssertionError("SecretStore must not be consulted")
+
+    monkeypatch.setattr("banking.sync.SecretStore", _ExplodingSecretStore)
+
+    with pytest.raises(NoConnectorsError):
+        run_sync(connectors=[], document_id=None)
