@@ -31,6 +31,15 @@ class AllBanksFailedError(Exception):
     """Raised when every bank connector fails; nothing is written to Sheets."""
 
 
+class NoConnectorsError(ValueError):
+    """Raised when a sync run is requested without any bank connector.
+
+    A programming error rather than a runtime failure: an empty connector
+    sequence would otherwise classify as ``FULL_SUCCESS`` (because ``all([])``
+    is true) and clear the month's tab by writing zero rows.
+    """
+
+
 class SheetsSyncError(Exception):
     """Raised when writing to Google Sheets fails; wraps the original writer error."""
 
@@ -125,6 +134,8 @@ def run_sync(
     Sabadell order. A single connector's failure does not abort the run.
 
     Raises:
+        NoConnectorsError: ``connectors`` was an empty sequence. Nothing is
+            read, fetched or written.
         SheetsSyncError: writing the combined rows to Google Sheets failed
             (including resolving the destination document ID), after at
             least one bank succeeded.
@@ -137,6 +148,9 @@ def run_sync(
     resolved_connectors: Sequence[EnableBankingConnector] = (
         connectors if connectors is not None else [cls() for cls in _CONNECTOR_CLASSES]
     )
+    if not resolved_connectors:
+        raise NoConnectorsError("run_sync requires at least one bank connector.")
+
     writer = writer or SheetsWriter()
 
     outcomes: list[BankOutcome] = []

@@ -1,5 +1,4 @@
 cryptography==50.0.0
-python-dotenv==1.2.2
 httpx==0.28.1
-PyJWT==2.13.0
+PyJWT==2.15.1
 gspread==6.2.1

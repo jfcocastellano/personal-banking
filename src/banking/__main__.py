@@ -5,6 +5,7 @@ import sys
 
 from banking.cli import secrets as secrets_cmd
 from banking.cli import sync as sync_cmd
+from banking.logging_config import configure_logging
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -20,6 +21,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
 def main() -> None:
     """Parse arguments and dispatch to the appropriate subcommand handler."""
+    configure_logging()
     parser = _build_parser()
     args = parser.parse_args()
 
