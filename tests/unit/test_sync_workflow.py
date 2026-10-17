@@ -269,3 +269,47 @@ def test_concurrent_runs_are_serialised_without_cancellation() -> None:
     assert concurrency.get("cancel-in-progress") is False, (
         "Cancelling in progress would interrupt a Sheets write mid-way"
     )
+
+
+# --------------------------------------------------------------------------
+# T014 (US3) — published run summary (FR-006, Decisión 4)
+# --------------------------------------------------------------------------
+
+
+def test_summary_step_publishes_even_when_the_sync_fails() -> None:
+    """The summary is written unconditionally (FR-006)."""
+    step = _step_named("Publicar resumen")
+    assert str(step.get("if", "")).strip() == "always()"
+    assert "$GITHUB_STEP_SUMMARY" in str(step.get("run", ""))
+
+
+def test_summary_reports_state_and_process_exit_code() -> None:
+    """The summary states the outcome and the pipeline's own exit code."""
+    script = _run_text("Publicar resumen")
+    env = _step_named("Publicar resumen").get("env", {})
+    assert "steps.sync.outputs.exit_code" in str(env.get("EXIT_CODE", "")), (
+        f"Summary does not receive the exit code: {env}"
+    )
+    assert "EXIT_CODE" in script
+    assert "Estado" in script
+
+
+def test_summary_lists_banks_movements_failures_and_duration() -> None:
+    """The four mandated data points come from the filtered process output."""
+    script = _run_text("Publicar resumen")
+    assert "Sincronización" in script, "Summary does not filter the headline line"
+    assert "  - " in script, "Summary does not filter the per-bank lines"
+    assert "sync-output.log" in script, "Summary does not read the captured log"
+
+
+def test_summary_degrades_gracefully_without_process_output() -> None:
+    """An early failure still publishes an explicit note instead of empty output."""
+    script = _run_text("Publicar resumen")
+    assert '-s "$log"' in script or "-s $log" in script, "No emptiness check on the log"
+    assert "Sin resumen" in script, "No degraded message for an early failure"
+
+
+def test_summary_is_published_before_the_exit_code_is_propagated() -> None:
+    """The summary runs before the job is failed by the final step."""
+    assert _step_index("Publicar resumen") < len(_steps()) - 1
+    assert str(_steps()[-1].get("run", "")).strip().startswith("exit ")
