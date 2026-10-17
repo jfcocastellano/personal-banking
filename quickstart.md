@@ -412,6 +412,10 @@ proceso no depende de la hora: siempre sincroniza el mes en curso desde el día 
 `4` (no se pudo entregar el email) quedan como ejecución **fallida**; solo `0` es
 `success`. En los tres primeros casos el email de IT6 llega igualmente.
 
+**Runbook de credenciales** — desde cero o tras perder la máquina anterior:
+[`docs/credentials-setup.md`](docs/credentials-setup.md) (origen de las 14, flujo
+`/auth` → `/sessions` de Enable Banking, alta en GitHub Secrets, renovación).
+
 **Runbooks** — en `specs/007-scheduler-github-actions/quickstart.md`: sesión PSD2
 caducada (`403` / `status: "expired"` → re-autorizar en el navegador, `gh secret
 set ENABLE_BANKING_SESSION_ID_<BANCO>` y `gh workflow run sync.yml`), rotación de
