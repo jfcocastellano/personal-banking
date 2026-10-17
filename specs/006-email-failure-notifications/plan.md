@@ -4,9 +4,9 @@
 
 **Entrada**: Especificación de la funcionalidad desde `specs/006-email-failure-notifications/spec.md`
 
-> **➡️ Siguiente paso**: ejecutar `/speckit-tasks` para generar `tasks.md` (descomposición en tareas
-> con ciclo Red → Green → Refactor) y después `/speckit-implement`. El flujo SDD es
-> spec → plan → **tasks** → implement (Principio I de la constitución).
+> **➡️ Siguiente paso**: ejecutar `/speckit-implement` sobre [tasks.md](tasks.md) (27 tareas en 6
+> fases, con ciclo Red → Green → Refactor y una puerta RED por historia de usuario). El flujo SDD es
+> spec → plan → **tasks** ✅ → implement (Principio I de la constitución).
 
 ---
 
@@ -137,6 +137,7 @@ cambio de arquitectura más allá de lo justificado arriba.
 ```text
 specs/006-email-failure-notifications/
 ├── plan.md                                ← este fichero (/speckit-plan)
+├── tasks.md                               ← salida de /speckit-tasks (27 tareas)
 ├── research.md                            ← salida de Fase 0
 ├── data-model.md                          ← salida de Fase 1
 ├── quickstart.md                          ← salida de Fase 1 (guía de validación)
