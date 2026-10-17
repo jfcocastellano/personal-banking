@@ -20,6 +20,7 @@ ENV/
 .env
 .env.*
 !.env.example
+*.pem
 
 # Pytest / coverage
 .pytest_cache/
