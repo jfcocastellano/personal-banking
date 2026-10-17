@@ -245,3 +245,27 @@ def test_final_step_propagates_the_process_exit_code() -> None:
     assert "steps.sync.outputs.exit_code" in script, (
         f"Last step does not propagate the exit code: {last.get('name')!r}"
     )
+
+
+# --------------------------------------------------------------------------
+# T012 (US2) — manual trigger and mutual exclusion (FR-002, FR-008)
+# --------------------------------------------------------------------------
+
+
+def test_manual_trigger_takes_no_parameters() -> None:
+    """`workflow_dispatch` exists and accepts no inputs (FR-002)."""
+    triggers = _load_workflow()["on"]
+    assert "workflow_dispatch" in triggers, "The workflow cannot be triggered manually"
+    dispatch = triggers["workflow_dispatch"]
+    inputs = dispatch.get("inputs") if isinstance(dispatch, dict) else None
+    assert not inputs, f"workflow_dispatch must not declare inputs, found {inputs}"
+
+
+def test_concurrent_runs_are_serialised_without_cancellation() -> None:
+    """Two runs never write to the sheet at the same time (FR-008)."""
+    concurrency = _job().get("concurrency")
+    assert isinstance(concurrency, dict), "The job declares no concurrency group"
+    assert concurrency.get("group") == "banking-sync"
+    assert concurrency.get("cancel-in-progress") is False, (
+        "Cancelling in progress would interrupt a Sheets write mid-way"
+    )
