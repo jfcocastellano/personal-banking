@@ -2,7 +2,7 @@
 
 > **Fuente de verdad del proyecto.** Este documento debe mantenerse actualizado ante cualquier cambio de requisitos, stack o decisiones de diseño.
 >
-> Última actualización: 2026-10-15
+> Última actualización: 2026-10-17
 
 ---
 
@@ -17,10 +17,10 @@ Las secciones 1–5 describen el **contrato objetivo** del proyecto. No hay que 
 | IT3 | Writer de Google Sheets | Implementada |
 | IT4 | Pipeline ING → Sheets (MVP) | Implementada |
 | IT5 | Multi-banco con resiliencia parcial | Implementada |
-| IT6 | Notificación de errores por email | **Pendiente** |
+| IT6 | Notificación de errores por email | Implementada |
 | IT7 | Scheduler en GitHub Actions | **Pendiente** (depende de IT6) |
 
-Así, de lo descrito más abajo todavía **no está construido**: el scheduler automático (UC1), el disparo manual vía `workflow_dispatch` (UC2) ni la notificación por email ante fallo (UC3). La planificación vive en `docs/roadmap.md`.
+Así, de lo descrito más abajo todavía **no está construido**: el scheduler automático (UC1), el disparo manual vía `workflow_dispatch` (UC2). La notificación por email ante fallo (UC3) ya está implementada en `src/banking/notify.py` y enganchada en `banking.cli.sync`. La planificación vive en `docs/roadmap.md`.
 
 **Observabilidad**
 Implementada en `src/banking/logging_config.py`. El entry point de la CLI instala sobre el logger raíz el formato exigido por la constitución (`%(asctime)s %(levelname)s %(name)s: %(message)s`) y resuelve el nivel desde la variable de entorno `LOG_LEVEL` (por defecto `INFO`; un valor no reconocido cae a `INFO`, para que un error de tipeo no aborte una sincronización). Importar `banking` nunca reconfigura el logging de la aplicación anfitriona.
@@ -62,7 +62,19 @@ Las credenciales sensibles (credenciales bancarias, tokens, contraseñas) se alm
 - **Desarrollo local:** fichero `.env` excluido de control de versiones. Los valores sensibles se almacenan encriptados con AES-256 (librería `cryptography`). La clave maestra de desencriptación se almacena como variable de entorno real del sistema operativo, nunca dentro del fichero `.env`.
 
 **Notificaciones**
-En caso de error, el sistema envía un email al propietario con el detalle del fallo. No hay notificación en caso de éxito.
+En caso de error, el sistema envía **un único email agregado** al propietario con el detalle del fallo: los bancos que fallaron con su motivo y los que sí se sincronizaron. No hay notificación en caso de éxito.
+
+El email se envía mediante Gmail SMTP (`smtplib` de la stdlib, sin dependencias nuevas) dentro del flujo de `python -m banking sync`, antes de devolver el código de salida. La configuración son cinco claves del `SecretStore`: `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD` (contraseña de aplicación de Gmail) y `NOTIFY_EMAIL_TO`. Si falta cualquiera de ellas, la notificación se omite con un `WARNING` y el código de salida del desenlace no cambia.
+
+Códigos de salida de `banking sync`:
+
+| Código | Significado |
+|---|---|
+| `0` | Los 4 bancos sincronizados y escritos (sin email) |
+| `1` | Los 4 bancos fallaron — nada escrito; email enviado u omitido |
+| `2` | ≥1 banco exitoso pero falló la escritura en Google Sheets; email enviado u omitido |
+| `3` | ≥1 banco exitoso y ≥1 fallido, escritura correcta; email enviado u omitido |
+| `4` | **Fallo de entrega del email** (el resumen de la ejecución ya se imprimió) |
 
 ---
 
@@ -117,7 +129,7 @@ Enable Banking como agregador PSD2. Actúa de intermediario entre el proceso y l
 Autenticación mediante cuenta de servicio de Google Cloud (service account). El JSON de credenciales se almacena como GitHub Secret. El Sheet se comparte con el email de la cuenta de servicio. No requiere intervención humana en ninguna ejecución.
 
 **Notificaciones**
-Gmail SMTP con contraseña de aplicación (requiere 2FA activo en la cuenta Google). Usando `smtplib` de la librería estándar de Python.
+Gmail SMTP con contraseña de aplicación (requiere 2FA activo en la cuenta Google). Usando `smtplib` y `email.message` de la librería estándar de Python — cero dependencias de terceros. Envío sobre `SMTP_SSL` (TLS implícito) con un timeout de 30 s.
 
 **Librerías principales**
 

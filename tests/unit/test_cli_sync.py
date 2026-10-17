@@ -305,3 +305,48 @@ def test_handle_failure_without_context_falls_back_to_empty_outcomes_and_current
     assert kwargs["outcomes"] == []
     assert kwargs["sheets_error"] is None
     assert kwargs["tab_name"] == date.today().strftime("%Y-%m")
+
+
+# --- IT6 (US3): ningún email cuando todo va bien ----------------------------
+
+
+@pytest.mark.parametrize(
+    "summary",
+    [
+        pytest.param(_full_success_summary(), id="rows-written"),
+        pytest.param(
+            _summary(
+                OverallStatus.FULL_SUCCESS,
+                [BankOutcome(name, True, 0, None) for name in _BANKS],
+            ),
+            id="zero-movements",
+        ),
+    ],
+)
+def test_handle_full_success_never_notifies(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    mocker: MockerFixture,
+    summary: SyncSummary,
+) -> None:
+    monkeypatch.setattr(cli_sync, "run_sync", lambda: summary)
+    notifier = mocker.Mock(spec=EmailNotifier)
+
+    exit_code = cli_sync.handle(argparse.Namespace(), notifier=notifier)
+
+    assert exit_code == 0
+    notifier.notify_failure.assert_not_called()
+    assert capsys.readouterr().err == ""
+
+
+def test_handle_full_success_does_not_even_build_a_notifier(
+    monkeypatch: pytest.MonkeyPatch, mocker: MockerFixture
+) -> None:
+    """No SMTP configuration is read on the happy path (FR-003)."""
+    monkeypatch.setattr(cli_sync, "run_sync", lambda: _full_success_summary())
+    exploding = mocker.patch.object(cli_sync, "EmailNotifier", autospec=True)
+    exploding.side_effect = AssertionError("EmailNotifier must not be built on success")
+
+    exit_code = cli_sync.handle(argparse.Namespace())
+
+    assert exit_code == 0
