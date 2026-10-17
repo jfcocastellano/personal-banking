@@ -313,3 +313,8 @@ def test_summary_is_published_before_the_exit_code_is_propagated() -> None:
     """The summary runs before the job is failed by the final step."""
     assert _step_index("Publicar resumen") < len(_steps()) - 1
     assert str(_steps()[-1].get("run", "")).strip().startswith("exit ")
+
+
+def test_workflow_permissions_are_read_only() -> None:
+    """The token cannot write anything back to the repository (FR-010)."""
+    assert _load_workflow().get("permissions") == {"contents": "read"}
