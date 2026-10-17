@@ -34,7 +34,7 @@ El scheduler vive en `.github/workflows/sync.yml`, separado del pipeline de CI (
 - **Configuración**: los 14 secretos de GitHub se validan como primer paso (fallo en menos de un minuto, nombrando el ausente y sin llamar a ninguna API, para no gastar la cuota PSD2 de 4 peticiones/cuenta/día) y se materializan en los dos mecanismos que usa el código: el `.env` cifrado del `SecretStore` (11 claves, vía `python -m banking secrets set`) y el fichero de firma RSA de Enable Banking (`eb-config.json` + PEM en `$RUNNER_TEMP`, fuera del workspace).
 - **Resultado**: el estado de la ejecución coincide con el exit code del proceso (`0`-`4`, ver tabla de notificaciones) y cada ejecución publica un resumen en su página con bancos procesados, movimientos escritos, fallos con su motivo y duración total.
 
-Los runbooks de alta de secretos, primera ejecución, rotación de credenciales y re-autorización de sesiones PSD2 caducadas están en `specs/007-scheduler-github-actions/quickstart.md` y, en versión operativa, en la sección IT7 de `quickstart.md`.
+Los runbooks de alta de secretos, primera ejecución, rotación de credenciales y re-autorización de sesiones PSD2 caducadas están en `specs/007-scheduler-github-actions/quickstart.md` y, en versión operativa, en la sección IT7 de `quickstart.md`. La reconstrucción completa de las 14 credenciales desde cero (clave maestra, `app_id`/PEM de Enable Banking, flujo de consentimiento PSD2, cuenta de servicio de Google, app password de Gmail y subida a GitHub Secrets) está en `docs/credentials-setup.md`.
 
 ---
 
