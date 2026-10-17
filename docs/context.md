@@ -18,12 +18,23 @@ Las secciones 1–5 describen el **contrato objetivo** del proyecto. No hay que 
 | IT4 | Pipeline ING → Sheets (MVP) | Implementada |
 | IT5 | Multi-banco con resiliencia parcial | Implementada |
 | IT6 | Notificación de errores por email | Implementada |
-| IT7 | Scheduler en GitHub Actions | **Pendiente** (depende de IT6) |
+| IT7 | Scheduler en GitHub Actions | Implementada |
 
-Así, de lo descrito más abajo todavía **no está construido**: el scheduler automático (UC1), el disparo manual vía `workflow_dispatch` (UC2). La notificación por email ante fallo (UC3) ya está implementada en `src/banking/notify.py` y enganchada en `banking.cli.sync`. La planificación vive en `docs/roadmap.md`.
+Las siete iteraciones del roadmap están implementadas: el scheduler automático (UC1), el disparo manual vía `workflow_dispatch` (UC2) y la notificación por email ante fallo (UC3) viven ya en el repositorio. La planificación vive en `docs/roadmap.md`.
 
 **Observabilidad**
 Implementada en `src/banking/logging_config.py`. El entry point de la CLI instala sobre el logger raíz el formato exigido por la constitución (`%(asctime)s %(levelname)s %(name)s: %(message)s`) y resuelve el nivel desde la variable de entorno `LOG_LEVEL` (por defecto `INFO`; un valor no reconocido cae a `INFO`, para que un error de tipeo no aborte una sincronización). Importar `banking` nunca reconfigura el logging de la aplicación anfitriona.
+
+**Despliegue y operación (IT7)**
+El scheduler vive en `.github/workflows/sync.yml`, separado del pipeline de CI (`.github/workflows/ci.yml`):
+
+- **Disparadores**: `schedule` con una única entrada `cron: "0 6 * * *"` (06:00 UTC ≈ 08:00 Madrid en verano) y `workflow_dispatch` sin parámetros. Ni `push` ni `pull_request` disparan la sincronización. La hora se cambia editando esa línea del cron, que es el único punto de configuración horaria; los workflows programados solo se ejecutan desde `main`.
+- **Ejecución**: job único `ubuntu-latest`, Python 3.12, `timeout-minutes: 10`, `permissions: contents: read` y `concurrency: banking-sync` con `cancel-in-progress: false` (serializa las ejecuciones para que nunca haya dos escrituras simultáneas en la misma pestaña).
+- **Sin lógica de CI en el código**: el workflow ejecuta `python -m banking sync`, el mismo comando que en local.
+- **Configuración**: los 14 secretos de GitHub se validan como primer paso (fallo en menos de un minuto, nombrando el ausente y sin llamar a ninguna API, para no gastar la cuota PSD2 de 4 peticiones/cuenta/día) y se materializan en los dos mecanismos que usa el código: el `.env` cifrado del `SecretStore` (11 claves, vía `python -m banking secrets set`) y el fichero de firma RSA de Enable Banking (`eb-config.json` + PEM en `$RUNNER_TEMP`, fuera del workspace).
+- **Resultado**: el estado de la ejecución coincide con el exit code del proceso (`0`-`4`, ver tabla de notificaciones) y cada ejecución publica un resumen en su página con bancos procesados, movimientos escritos, fallos con su motivo y duración total.
+
+Los runbooks de alta de secretos, primera ejecución, rotación de credenciales y re-autorización de sesiones PSD2 caducadas están en `specs/007-scheduler-github-actions/quickstart.md` y, en versión operativa, en la sección IT7 de `quickstart.md`.
 
 ---
 
