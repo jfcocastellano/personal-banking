@@ -1,0 +1,121 @@
+name: Sync diaria
+
+"on":
+  schedule:
+    # Hora diaria de la sincronización, en UTC. Esta línea es el único punto a
+    # tocar para cambiarla: 06:00 UTC = 08:00 en Madrid (verano) / 07:00 (invierno).
+    # Los workflows programados solo se ejecutan desde la rama por defecto (main).
+    - cron: "0 6 * * *"
+
+permissions:
+  contents: read
+
+jobs:
+  sync:
+    name: Sincronizar bancos y escribir en Google Sheets
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      BANKING_MASTER_KEY: ${{ secrets.BANKING_MASTER_KEY }}
+      ENABLE_BANKING_SESSION_ID_ING: ${{ secrets.ENABLE_BANKING_SESSION_ID_ING }}
+      ENABLE_BANKING_SESSION_ID_REVOLUT: ${{ secrets.ENABLE_BANKING_SESSION_ID_REVOLUT }}
+      ENABLE_BANKING_SESSION_ID_MYINVESTOR: ${{ secrets.ENABLE_BANKING_SESSION_ID_MYINVESTOR }}
+      ENABLE_BANKING_SESSION_ID_SABADELL: ${{ secrets.ENABLE_BANKING_SESSION_ID_SABADELL }}
+      ENABLE_BANKING_APP_ID: ${{ secrets.ENABLE_BANKING_APP_ID }}
+      ENABLE_BANKING_PRIVATE_KEY: ${{ secrets.ENABLE_BANKING_PRIVATE_KEY }}
+      GOOGLE_SHEETS_CREDENTIALS: ${{ secrets.GOOGLE_SHEETS_CREDENTIALS }}
+      GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
+      SMTP_HOST: ${{ secrets.SMTP_HOST }}
+      SMTP_PORT: ${{ secrets.SMTP_PORT }}
+      SMTP_USER: ${{ secrets.SMTP_USER }}
+      SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+      NOTIFY_EMAIL_TO: ${{ secrets.NOTIFY_EMAIL_TO }}
+    steps:
+      # 1. Ninguna llamada externa si falta configuración: el límite PSD2 es de
+      #    4 peticiones por cuenta y día, no se gasta en una ejecución rota.
+      - name: Validar configuración
+        run: |
+          set -u
+          missing=""
+          for name in \
+            BANKING_MASTER_KEY \
+            ENABLE_BANKING_SESSION_ID_ING \
+            ENABLE_BANKING_SESSION_ID_REVOLUT \
+            ENABLE_BANKING_SESSION_ID_MYINVESTOR \
+            ENABLE_BANKING_SESSION_ID_SABADELL \
+            ENABLE_BANKING_APP_ID \
+            ENABLE_BANKING_PRIVATE_KEY \
+            GOOGLE_SHEETS_CREDENTIALS \
+            GOOGLE_SHEET_ID \
+            SMTP_HOST \
+            SMTP_PORT \
+            SMTP_USER \
+            SMTP_PASSWORD \
+            NOTIFY_EMAIL_TO; do
+            if [ -z "$(printenv "$name" || true)" ]; then
+              missing="$missing $name"
+            fi
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::Faltan secretos de GitHub:$missing"
+            exit 1
+          fi
+          echo "Los 14 secretos están presentes."
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Instalar dependencias
+        run: |
+          pip install -r requirements.txt
+          pip install -e .
+          pip-audit -r requirements.txt
+
+      # 2. Los secretos se materializan en los dos mecanismos que ya usa el
+      #    código: el .env cifrado (SecretStore) y el fichero de firma RSA de
+      #    Enable Banking, que vive fuera del workspace ($RUNNER_TEMP).
+      - name: Provisionar configuración
+        run: |
+          set -eu
+          python -m banking secrets set ENABLE_BANKING_SESSION_ID_ING "$ENABLE_BANKING_SESSION_ID_ING"
+          python -m banking secrets set ENABLE_BANKING_SESSION_ID_REVOLUT "$ENABLE_BANKING_SESSION_ID_REVOLUT"
+          python -m banking secrets set ENABLE_BANKING_SESSION_ID_MYINVESTOR "$ENABLE_BANKING_SESSION_ID_MYINVESTOR"
+          python -m banking secrets set ENABLE_BANKING_SESSION_ID_SABADELL "$ENABLE_BANKING_SESSION_ID_SABADELL"
+          python -m banking secrets set GOOGLE_SHEETS_CREDENTIALS "$GOOGLE_SHEETS_CREDENTIALS"
+          python -m banking secrets set GOOGLE_SHEET_ID "$GOOGLE_SHEET_ID"
+          python -m banking secrets set SMTP_HOST "$SMTP_HOST"
+          python -m banking secrets set SMTP_PORT "$SMTP_PORT"
+          python -m banking secrets set SMTP_USER "$SMTP_USER"
+          python -m banking secrets set SMTP_PASSWORD "$SMTP_PASSWORD"
+          python -m banking secrets set NOTIFY_EMAIL_TO "$NOTIFY_EMAIL_TO"
+
+          umask 077
+          mkdir -p "$RUNNER_TEMP/eb"
+          printf '%s\n' "$ENABLE_BANKING_PRIVATE_KEY" > "$RUNNER_TEMP/eb/private_key.pem"
+          chmod 600 "$RUNNER_TEMP/eb/private_key.pem"
+          printf '{"app_id": "%s", "private_key_path": "%s"}\n' \
+            "$ENABLE_BANKING_APP_ID" "$RUNNER_TEMP/eb/private_key.pem" \
+            > "$RUNNER_TEMP/eb/eb-config.json"
+          echo "BANKING_EB_CONFIG_DIR=$RUNNER_TEMP/eb" >> "$GITHUB_ENV"
+
+      # 3. El mismo comando que en local: el scheduler no tiene lógica propia.
+      #    `set +e` evita abortar antes de publicar el resumen, y PIPESTATUS[0]
+      #    recupera el exit code del proceso (no el de tee).
+      - name: Ejecutar sincronización
+        id: sync
+        run: |
+          set +e
+          set -o pipefail
+          python -m banking sync 2>&1 | tee "$RUNNER_TEMP/sync-output.log"
+          code=${PIPESTATUS[0]}
+          echo "exit_code=$code" >> "$GITHUB_OUTPUT"
+          exit 0
+
+      - name: Propagar resultado
+        if: always()
+        run: exit ${{ steps.sync.outputs.exit_code || 1 }}
