@@ -125,6 +125,38 @@ jobs:
           echo "exit_code=$code" >> "$GITHUB_OUTPUT"
           exit 0
 
+      # 4. Resumen en la página de la ejecución. Se construye con la salida que
+      #    el propio proceso imprime (bancos, movimientos, fallos, duración),
+      #    sin lógica de CI dentro del código Python.
+      - name: Publicar resumen
+        if: always()
+        env:
+          EXIT_CODE: ${{ steps.sync.outputs.exit_code }}
+        run: |
+          set -u
+          log="$RUNNER_TEMP/sync-output.log"
+          {
+            echo "## Sincronización bancaria — $(date -u +%Y-%m-%d)"
+            echo
+            if [ "${EXIT_CODE:-}" = "0" ]; then
+              echo "- **Estado**: éxito"
+            elif [ -n "${EXIT_CODE:-}" ]; then
+              echo "- **Estado**: fallo"
+            else
+              echo "- **Estado**: fallo (el proceso no llegó a ejecutarse)"
+            fi
+            echo "- **Exit code**: ${EXIT_CODE:-desconocido}"
+            echo
+            if [ -s "$log" ]; then
+              echo '```text'
+              grep -E '^(Sincronización|ERROR|  - )' "$log" || tail -n 20 "$log"
+              echo '```'
+            else
+              echo "Sin resumen del proceso: la ejecución falló antes de arrancar."
+              echo "Revisa los logs del paso anterior (validación o aprovisionamiento)."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Propagar resultado
         if: always()
         run: exit ${{ steps.sync.outputs.exit_code || 1 }}
