@@ -6,6 +6,9 @@ name: Sync diaria
     # tocar para cambiarla: 06:00 UTC = 08:00 en Madrid (verano) / 07:00 (invierno).
     # Los workflows programados solo se ejecutan desde la rama por defecto (main).
     - cron: "0 6 * * *"
+  # Disparo manual desde la interfaz de GitHub, sin parámetros: la
+  # sincronización no se parametriza (FR-002).
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -15,6 +18,12 @@ jobs:
     name: Sincronizar bancos y escribir en Google Sheets
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    # Serializa programada y manual: nunca dos escrituras simultáneas en la
+    # misma pestaña. No se cancela la ejecución en curso porque interrumpiría
+    # una escritura de Sheets a medias (FR-008).
+    concurrency:
+      group: banking-sync
+      cancel-in-progress: false
     env:
       BANKING_MASTER_KEY: ${{ secrets.BANKING_MASTER_KEY }}
       ENABLE_BANKING_SESSION_ID_ING: ${{ secrets.ENABLE_BANKING_SESSION_ID_ING }}
