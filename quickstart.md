@@ -359,6 +359,66 @@ been printed, so the outcome is still identifiable). See
 `specs/006-email-failure-notifications/quickstart.md` for the full validation
 guide, including the manual check against a real Gmail account.
 
+## IT7 — Ejecución automática diaria (scheduler en GitHub Actions)
+
+`.github/workflows/sync.yml` ejecuta la sincronización una vez al día sin ninguna
+acción tuya, y permite relanzarla a mano desde GitHub. Es un workflow separado de
+`ci.yml`: los pushes y las PRs nunca sincronizan ni escriben en la hoja.
+
+**Alta de los 14 secretos** (una sola vez, con `gh` autenticado como propietario):
+
+```bash
+REPO=jfcocastellano/personal-banking
+
+# .env cifrado: clave maestra + 11 valores del SecretStore
+gh secret set BANKING_MASTER_KEY --repo "$REPO"
+gh secret set ENABLE_BANKING_SESSION_ID_ING --repo "$REPO"
+gh secret set ENABLE_BANKING_SESSION_ID_REVOLUT --repo "$REPO"
+gh secret set ENABLE_BANKING_SESSION_ID_MYINVESTOR --repo "$REPO"
+gh secret set ENABLE_BANKING_SESSION_ID_SABADELL --repo "$REPO"
+gh secret set GOOGLE_SHEETS_CREDENTIALS --repo "$REPO" < service-account.json
+gh secret set GOOGLE_SHEET_ID --repo "$REPO"
+gh secret set SMTP_HOST --repo "$REPO"
+gh secret set SMTP_PORT --repo "$REPO"
+gh secret set SMTP_USER --repo "$REPO"
+gh secret set SMTP_PASSWORD --repo "$REPO"
+gh secret set NOTIFY_EMAIL_TO --repo "$REPO"
+
+# fichero de firma RSA de Enable Banking
+gh secret set ENABLE_BANKING_APP_ID --repo "$REPO"
+gh secret set ENABLE_BANKING_PRIVATE_KEY --repo "$REPO" < private_key.pem
+
+gh secret list --repo "$REPO"   # deben aparecer los 14 nombres, sin valores
+```
+
+**Primera ejecución real**:
+
+```bash
+gh workflow run sync.yml --repo "$REPO"
+gh run watch --repo "$REPO"
+```
+
+Comprueba: estado `success`, resumen con `Sincronización completada: 4/4 bancos`,
+movimientos y pestaña, una línea por banco y duración; la pestaña del mes contiene
+los movimientos; ningún email (éxito completo); duración por debajo de 10 minutos.
+
+**Cambiar la hora diaria**: edita la única línea `cron: "0 6 * * *"` de
+`.github/workflows/sync.yml` (siempre en UTC), abre PR y mergea. El cron solo se
+ejecuta desde `main`, así que el cambio no surte efecto hasta el merge, y el
+proceso no depende de la hora: siempre sincroniza el mes en curso desde el día 1.
+
+**Interpretación del estado**: el job termina con el exit code del proceso. `1`
+(los 4 bancos fallaron), `2` (fallo escribiendo en Sheets), `3` (fallo parcial) y
+`4` (no se pudo entregar el email) quedan como ejecución **fallida**; solo `0` es
+`success`. En los tres primeros casos el email de IT6 llega igualmente.
+
+**Runbooks** — en `specs/007-scheduler-github-actions/quickstart.md`: sesión PSD2
+caducada (`403` / `status: "expired"` → re-autorizar en el navegador, `gh secret
+set ENABLE_BANKING_SESSION_ID_<BANCO>` y `gh workflow run sync.yml`), rotación de
+credenciales y comportamientos conocidos de la plataforma (retraso de hasta
+~15 min, desactivación del cron por inactividad del repositorio, timeout de
+10 minutos sin email porque el proceso muere antes de notificar).
+
 ## Notes
 
 - `.env` is git-ignored — never commit it
@@ -373,3 +433,9 @@ guide, including the manual check against a real Gmail account.
   shared across all four banks
 - The `GMAIL_SMTP_PASSWORD`/`GMAIL_FROM`/`GMAIL_TO` placeholders were replaced by
   the five `SMTP_*`/`NOTIFY_EMAIL_TO` keys during IT6
+- All credentials moved from the local `.env` to GitHub Secrets during IT7
+  (14 secrets); the workflow materialises them into `.env` and into
+  `$RUNNER_TEMP/eb/` on each run, so no credential is ever written to the
+  repository
+- `*.pem` is git-ignored since IT7, so the Enable Banking private key cannot be
+  committed by accident
