@@ -4,9 +4,9 @@
 
 **Entrada**: Especificación de la funcionalidad desde `specs/007-scheduler-github-actions/spec.md`
 
-> **➡️ Siguiente paso**: ejecutar `/speckit-tasks` para generar [tasks.md](tasks.md) y después
-> `/speckit-implement`. El flujo SDD es spec → plan → **tasks** → implement (Principio I de la
-> constitución).
+> **➡️ Siguiente paso**: ejecutar `/speckit-implement` sobre [tasks.md](tasks.md) (23 tareas en 6 fases,
+> con ciclo Red → Green → Refactor por historia de usuario). El flujo SDD es spec → plan → **tasks** ✅
+> → implement (Principio I de la constitución).
 
 ---
 
@@ -135,7 +135,7 @@ FR-003 y se rechaza explícitamente en `research.md`.
 ```text
 specs/007-scheduler-github-actions/
 ├── plan.md                                ← este fichero (/speckit-plan)
-├── tasks.md                               ← salida de /speckit-tasks
+├── tasks.md                               ← salida de /speckit-tasks (23 tareas)
 ├── research.md                            ← salida de Fase 0 (11 decisiones)
 ├── data-model.md                          ← salida de Fase 1 (workflow, secretos, ejecución, resumen)
 ├── quickstart.md                          ← salida de Fase 1 (despliegue + runbooks)
