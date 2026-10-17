@@ -198,13 +198,20 @@ def _count_succeeded(outcomes: list[BankOutcome]) -> int:
 def _build_subject(outcomes: list[BankOutcome], sheets_error: str | None, tab_name: str) -> str:
     """Build the email subject for the run's failure mode (see research.md)."""
     succeeded = _count_succeeded(outcomes)
-    total = len(outcomes)
 
     if sheets_error is None:
-        if succeeded and succeeded < total:
-            return f"Sincronización parcial: {succeeded}/{total} bancos — fallo en {tab_name}"
-        raise NotImplementedError("total-failure subject lands with US2")
-    raise NotImplementedError("sheets-failure subject lands with US2")
+        if succeeded and succeeded < len(outcomes):
+            return (
+                f"Sincronización parcial: {succeeded}/{len(outcomes)} bancos — fallo en {tab_name}"
+            )
+        return f"Sincronización fallida: los 4 bancos fallaron — {tab_name}"
+
+    if any(not outcome.succeeded for outcome in outcomes):
+        return (
+            "Sincronización fallida: error escribiendo en Google Sheets "
+            f"(con fallos de banco) — {tab_name}"
+        )
+    return f"Sincronización fallida: error escribiendo en Google Sheets — {tab_name}"
 
 
 def _build_body(

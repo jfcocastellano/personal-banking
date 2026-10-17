@@ -357,3 +357,149 @@ def test_notify_failure_partial_with_two_failed_banks_sends_a_single_email(
     assert "EnableBankingAPIError: 500" in body
     assert "- ING España: 3 movimientos" in body
     assert "- Banco Sabadell: 4 movimientos" in body
+
+
+# --- US2: fallo total y fallo de escritura en Sheets ------------------------
+
+
+def _total_failure_outcomes() -> list[BankOutcome]:
+    return _outcomes(
+        ("ING España", False, None, "ReauthorizationRequiredError: sesión caducada"),
+        ("Revolut", False, None, "RateLimitExceededError: límite alcanzado"),
+        ("MyInvestor", False, None, "EnableBankingAPIError: 500"),
+        ("Banco Sabadell", False, None, "TimeoutError: sin respuesta"),
+    )
+
+
+def test_notify_failure_total_sends_one_email_with_the_four_reasons(
+    mocker: MockerFixture,
+) -> None:
+    smtp, factory = _smtp_double(mocker)
+    notifier = EmailNotifier(store=_store_with(), smtp_factory=factory)
+
+    status = notifier.notify_failure(
+        outcomes=_total_failure_outcomes(),
+        sheets_error=None,
+        tab_name="2026-08",
+        duration_seconds=12.5,
+    )
+
+    assert status is DeliveryStatus.SENT
+    smtp.send_message.assert_called_once()
+    message = _sent_message(smtp)
+    assert message["Subject"] == "Sincronización fallida: los 4 bancos fallaron — 2026-08"
+    body = message.get_content()
+    for reason in [
+        "sesión caducada",
+        "límite alcanzado",
+        "EnableBankingAPIError: 500",
+        "sin respuesta",
+    ]:
+        assert reason in body
+    assert "movimientos" not in body
+    assert "ERROR (Sheets)" not in body
+    assert _SMTP_VALUES["SMTP_PASSWORD"] not in body
+
+
+def test_notify_failure_sheets_only_reports_the_write_error_as_the_main_cause(
+    mocker: MockerFixture,
+) -> None:
+    smtp, factory = _smtp_double(mocker)
+    notifier = EmailNotifier(store=_store_with(), smtp_factory=factory)
+    outcomes = _outcomes(
+        ("ING España", True, 3, None),
+        ("Revolut", True, 2, None),
+        ("MyInvestor", True, 0, None),
+        ("Banco Sabadell", True, 1, None),
+    )
+
+    status = notifier.notify_failure(
+        outcomes=outcomes,
+        sheets_error="SheetsAccessError: sin permisos",
+        tab_name="2026-08",
+        duration_seconds=4.0,
+    )
+
+    assert status is DeliveryStatus.SENT
+    smtp.send_message.assert_called_once()
+    message = _sent_message(smtp)
+    assert (
+        message["Subject"] == "Sincronización fallida: error escribiendo en Google Sheets — 2026-08"
+    )
+    body = message.get_content()
+    assert "ERROR (Sheets): SheetsAccessError: sin permisos" in body
+    assert "FALLÓ —" not in body
+    assert "- ING España: 3 movimientos" in body
+    assert _SMTP_VALUES["SMTP_PASSWORD"] not in body
+
+
+def test_notify_failure_combined_case_sends_a_single_email_with_both_causes(
+    mocker: MockerFixture,
+) -> None:
+    smtp, factory = _smtp_double(mocker)
+    notifier = EmailNotifier(store=_store_with(), smtp_factory=factory)
+    outcomes = _outcomes(
+        ("ING España", True, 3, None),
+        ("Revolut", False, None, "ReauthorizationRequiredError: re-auth needed"),
+        ("MyInvestor", True, 1, None),
+        ("Banco Sabadell", False, None, "TimeoutError: sin respuesta"),
+    )
+
+    status = notifier.notify_failure(
+        outcomes=outcomes,
+        sheets_error="SheetsQuotaExceededError: cuota",
+        tab_name="2026-08",
+        duration_seconds=7.5,
+    )
+
+    assert status is DeliveryStatus.SENT
+    smtp.send_message.assert_called_once()
+    message = _sent_message(smtp)
+    assert message["Subject"] == (
+        "Sincronización fallida: error escribiendo en Google Sheets (con fallos de banco) — 2026-08"
+    )
+    body = message.get_content()
+    assert "ERROR (Sheets): SheetsQuotaExceededError: cuota" in body
+    assert "- Revolut: FALLÓ — ReauthorizationRequiredError: re-auth needed" in body
+    assert "- Banco Sabadell: FALLÓ — TimeoutError: sin respuesta" in body
+    assert "- ING España: 3 movimientos" in body
+
+
+def test_notify_failure_without_outcome_context_still_classifies_the_sheets_failure(
+    mocker: MockerFixture,
+) -> None:
+    """Defensive fallback for callers that raise without structured context."""
+    smtp, factory = _smtp_double(mocker)
+    notifier = EmailNotifier(store=_store_with(), smtp_factory=factory)
+
+    status = notifier.notify_failure(
+        outcomes=[],
+        sheets_error="SheetsConfigError: credenciales",
+        tab_name="2026-08",
+        duration_seconds=0.0,
+    )
+
+    assert status is DeliveryStatus.SENT
+    message = _sent_message(smtp)
+    assert (
+        message["Subject"] == "Sincronización fallida: error escribiendo en Google Sheets — 2026-08"
+    )
+    assert "ERROR (Sheets): SheetsConfigError: credenciales" in message.get_content()
+
+
+def test_notify_failure_failed_subject_when_configuration_skips(
+    mocker: MockerFixture,
+) -> None:
+    """A failed delivery is reported as FAILED even for the new failure modes."""
+    factory = mocker.Mock()
+    notifier = EmailNotifier(store=_store_with(SMTP_HOST=None), smtp_factory=factory)
+
+    status = notifier.notify_failure(
+        outcomes=_total_failure_outcomes(),
+        sheets_error=None,
+        tab_name="2026-08",
+        duration_seconds=1.0,
+    )
+
+    assert status is DeliveryStatus.SKIPPED
+    factory.assert_not_called()

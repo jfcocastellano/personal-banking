@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+from datetime import date
 
 from banking.notify import DeliveryStatus, EmailNotifier
 from banking.sync import AllBanksFailedError, BankOutcome, OverallStatus, SheetsSyncError, run_sync
@@ -40,15 +41,9 @@ def handle(args: argparse.Namespace, notifier: EmailNotifier | None = None) -> i
     try:
         result = run_sync()
     except AllBanksFailedError as exc:
-        print(
-            "ERROR: los 4 bancos fallaron — no se ha escrito nada en Google Sheets",
-            file=sys.stderr,
-        )
-        print(f"  {exc}", file=sys.stderr)
-        return 1
+        return _finish_total_failure(notifier, exc)
     except SheetsSyncError as exc:
-        print(f"ERROR (Sheets): {exc}", file=sys.stderr)
-        return 2
+        return _finish_sheets_failure(notifier, exc)
 
     succeeded = sum(1 for outcome in result.outcomes if outcome.succeeded)
     total = len(result.outcomes)
@@ -84,6 +79,36 @@ def handle(args: argparse.Namespace, notifier: EmailNotifier | None = None) -> i
     return exit_code
 
 
+def _finish_total_failure(notifier: EmailNotifier | None, exc: AllBanksFailedError) -> int:
+    """Print the IT5 error for a total failure, notify, and return the exit code."""
+    print(
+        "ERROR: los 4 bancos fallaron — no se ha escrito nada en Google Sheets",
+        file=sys.stderr,
+    )
+    print(f"  {exc}", file=sys.stderr)
+    notification_exit = _notify_and_exit(
+        notifier,
+        outcomes=exc.outcomes or [],
+        sheets_error=None,
+        tab_name=exc.tab_name or _current_tab_name(),
+        duration_seconds=0.0,
+    )
+    return notification_exit if notification_exit is not None else 1
+
+
+def _finish_sheets_failure(notifier: EmailNotifier | None, exc: SheetsSyncError) -> int:
+    """Print the IT5 error for a Sheets failure, notify, and return the exit code."""
+    print(f"ERROR (Sheets): {exc}", file=sys.stderr)
+    notification_exit = _notify_and_exit(
+        notifier,
+        outcomes=exc.outcomes or [],
+        sheets_error=str(exc),
+        tab_name=exc.tab_name or _current_tab_name(),
+        duration_seconds=0.0,
+    )
+    return notification_exit if notification_exit is not None else 2
+
+
 def _notify_and_exit(
     notifier: EmailNotifier | None,
     outcomes: list[BankOutcome],
@@ -108,3 +133,8 @@ def _notify_and_exit(
         print(_NOTIFICATION_FAILED_MESSAGE, file=sys.stderr)
         return 4
     return None
+
+
+def _current_tab_name() -> str:
+    """Return this month's tab name, used when an exception carries no context."""
+    return date.today().strftime("%Y-%m")
