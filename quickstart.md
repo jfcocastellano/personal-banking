@@ -325,6 +325,40 @@ with the successful banks' data written regardless). See
 validation guide (mocked scenarios for CI, plus an optional manual run
 against real credentials for all four banks).
 
+## IT6 — Notificación de errores por email
+
+When a run fails (partially or totally, including a Google Sheets write
+failure), `python -m banking sync` now sends **one aggregated email** to the
+owner through Gmail SMTP, using only the standard library (`smtplib` +
+`email.message`) — no new dependencies. The email is sent inside the command,
+before the exit code, and its subject classifies the failure (`Sincronización
+parcial: 3/4 bancos — fallo en 2026-08`, `Sincronización fallida: los 4 bancos
+fallaron — 2026-08`, `... error escribiendo en Google Sheets — <tab>`). A
+successful run never sends anything.
+
+**One-time setup**: store the five notification keys in the secret store. The
+first three replace the IT1 placeholders `GMAIL_SMTP_PASSWORD`/`GMAIL_FROM`/
+`GMAIL_TO`, which are no longer read.
+
+```bash
+python -m banking secrets set SMTP_HOST smtp.gmail.com
+python -m banking secrets set SMTP_PORT 465
+python -m banking secrets set SMTP_USER you@gmail.com
+python -m banking secrets set SMTP_PASSWORD <gmail-app-password>
+python -m banking secrets set NOTIFY_EMAIL_TO you@gmail.com
+```
+
+`SMTP_PASSWORD` must be a Gmail app password (2FA required), never the account
+password. If any of the five keys is missing the notification is skipped with a
+`WARNING` and the sync outcome's exit code is unchanged — sending email is an
+addition, never a requirement for the sync itself.
+
+The exit codes gain a fifth value: `4` means the sync outcome happened **and**
+the failure email could not be delivered (the run summary or error has already
+been printed, so the outcome is still identifiable). See
+`specs/006-email-failure-notifications/quickstart.md` for the full validation
+guide, including the manual check against a real Gmail account.
+
 ## Notes
 
 - `.env` is git-ignored — never commit it
@@ -337,3 +371,5 @@ against real credentials for all four banks).
   per-bank keys (`ENABLE_BANKING_SESSION_ID_ING`/`_REVOLUT`/`_MYINVESTOR`/
   `_SABADELL`) during IT5; `ENABLE_BANKING_APP_ID`/`eb-config.json` remain
   shared across all four banks
+- The `GMAIL_SMTP_PASSWORD`/`GMAIL_FROM`/`GMAIL_TO` placeholders were replaced by
+  the five `SMTP_*`/`NOTIFY_EMAIL_TO` keys during IT6

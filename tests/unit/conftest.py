@@ -2,6 +2,7 @@
 
 import json
 import secrets
+import smtplib
 from collections.abc import Callable
 from pathlib import Path
 
@@ -11,6 +12,71 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 
 from banking.config.secret_store import SecretStore
+
+_SMTP_CONFIG = {
+    "SMTP_HOST": "smtp.example.com",
+    "SMTP_PORT": "465",
+    "SMTP_USER": "bot@example.com",
+    "SMTP_PASSWORD": "app-password-1234",
+    "NOTIFY_EMAIL_TO": "owner@example.com",
+}
+
+
+class _RealSMTPAttempted(BaseException):
+    """Raised when a test reaches a real SMTP connection.
+
+    Deliberately a ``BaseException``: production code catches ``Exception``
+    around the send path (FR-006), so an ordinary exception would be swallowed
+    and the offending test would pass. This one fails the test instead.
+    """
+
+
+class _GuardedSMTP(smtplib.SMTP):
+    """``smtplib.SMTP`` that refuses to open a connection (FR-010)."""
+
+    def __init__(self, *args: object, **kwargs: object) -> None:
+        raise _RealSMTPAttempted(
+            "real SMTP connection attempted — inject an smtp_factory returning "
+            "Mock(spec=smtplib.SMTP) instead"
+        )
+
+
+class _GuardedSMTPSSL(smtplib.SMTP_SSL):
+    """``smtplib.SMTP_SSL`` that refuses to open a connection (FR-010)."""
+
+    def __init__(self, *args: object, **kwargs: object) -> None:
+        raise _RealSMTPAttempted(
+            "real SMTP connection attempted — inject an smtp_factory returning "
+            "Mock(spec=smtplib.SMTP) instead"
+        )
+
+
+@pytest.fixture(autouse=True)
+def no_real_smtp(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Fail any test that tries to open a real SMTP connection (FR-010).
+
+    Subclasses of the real classes keep ``Mock(spec=smtplib.SMTP)`` working
+    (the spec still lists every real attribute). A test that needs to
+    monkeypatch these attributes itself simply patches over this guard.
+    """
+    monkeypatch.setattr(smtplib, "SMTP", _GuardedSMTP)
+    monkeypatch.setattr(smtplib, "SMTP_SSL", _GuardedSMTPSSL)
+
+
+@pytest.fixture
+def smtp_config_in_store(
+    mock_master_key: str, tmp_env_file: Path, monkeypatch: pytest.MonkeyPatch
+) -> dict[str, str]:
+    """Store the five SMTP/notification keys the notifier reads.
+
+    Returns:
+        The plaintext values that were stored.
+    """
+    monkeypatch.setenv("BANKING_ENV_FILE", str(tmp_env_file))
+    store = SecretStore(tmp_env_file)
+    for key, value in _SMTP_CONFIG.items():
+        store.set(key, value)
+    return dict(_SMTP_CONFIG)
 
 
 @pytest.fixture

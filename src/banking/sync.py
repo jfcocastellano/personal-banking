@@ -1,5 +1,7 @@
 """Multi-bank -> Google Sheets synchronization pipeline (IT5)."""
 
+from __future__ import annotations
+
 import logging
 import time
 from dataclasses import dataclass
@@ -28,7 +30,24 @@ _CONNECTOR_CLASSES: tuple[type[EnableBankingConnector], ...] = (
 
 
 class AllBanksFailedError(Exception):
-    """Raised when every bank connector fails; nothing is written to Sheets."""
+    """Raised when every bank connector fails; nothing is written to Sheets.
+
+    Attributes:
+        outcomes: The per-bank outcomes of the failed run, or ``None`` when the
+            raiser did not provide context (kept for backwards compatibility).
+        tab_name: The destination tab of the run, or ``None``.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        outcomes: list[BankOutcome] | None = None,
+        tab_name: str | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.outcomes = outcomes
+        self.tab_name = tab_name
 
 
 class NoConnectorsError(ValueError):
@@ -41,7 +60,24 @@ class NoConnectorsError(ValueError):
 
 
 class SheetsSyncError(Exception):
-    """Raised when writing to Google Sheets fails; wraps the original writer error."""
+    """Raised when writing to Google Sheets fails; wraps the original writer error.
+
+    Attributes:
+        outcomes: The per-bank outcomes gathered before the failed write, or
+            ``None`` when the raiser did not provide context.
+        tab_name: The destination tab of the run, or ``None``.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        outcomes: list[BankOutcome] | None = None,
+        tab_name: str | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.outcomes = outcomes
+        self.tab_name = tab_name
 
 
 class OverallStatus(Enum):
@@ -165,7 +201,9 @@ def run_sync(
     if overall_status == OverallStatus.TOTAL_FAILURE:
         aggregate = "; ".join(f"{o.bank_name}: {o.failure_reason}" for o in outcomes)
         logger.error("Sync failed: all four banks failed: %s", aggregate)
-        raise AllBanksFailedError(f"All four banks failed: {aggregate}")
+        raise AllBanksFailedError(
+            f"All four banks failed: {aggregate}", outcomes=outcomes, tab_name=tab_name
+        )
 
     try:
         resolved_document_id = (
@@ -176,7 +214,7 @@ def run_sync(
         )
     except Exception as exc:
         logger.error("Sync failed: system=sheets tab=%s reason=%s", tab_name, exc)
-        raise SheetsSyncError(str(exc)) from exc
+        raise SheetsSyncError(str(exc), outcomes=outcomes, tab_name=tab_name) from exc
 
     duration = time.monotonic() - start
     total_rows_written = sum(o.rows_written or 0 for o in outcomes)
