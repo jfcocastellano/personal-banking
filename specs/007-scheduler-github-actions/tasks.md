@@ -192,3 +192,32 @@ Fase 1  T001, T002  ──→ Fase 2  T003, T004
   distintos).
 - Todo lo demás toca `.github/workflows/sync.yml` o `tests/unit/test_sync_workflow.py`
   y es estrictamente secuencial.
+
+---
+
+## Trazabilidad contrato → test (T021)
+
+Cada invariante de [`contracts/sync-workflow.md`](contracts/sync-workflow.md) § 6
+tiene al menos un test en `tests/unit/test_sync_workflow.py`. Verificado
+programáticamente: los 21 tests del fichero existen y la suite está en verde.
+
+| # | Invariante | Test |
+|---|---|---|
+| 1 | `sync.yml` existe y es YAML válido | `test_workflow_file_exists`, `test_workflow_is_valid_yaml_with_a_name` |
+| 2 | Sólo `schedule` (cron diario) y `workflow_dispatch` (sin `inputs`) | `test_schedule_trigger_is_a_single_daily_cron`, `test_manual_trigger_takes_no_parameters` |
+| 3 | Ausencia total de `push` y `pull_request` | `test_no_unexpected_triggers` |
+| 4 | `timeout-minutes: 10` y `runs-on: ubuntu-latest` | `test_job_runs_on_ubuntu_with_a_ten_minute_timeout` |
+| 5 | `concurrency` con `cancel-in-progress: false` | `test_concurrent_runs_are_serialised_without_cancellation` |
+| 6 | `permissions` de sólo lectura | `test_workflow_permissions_are_read_only` |
+| 7 | El job ejecuta `python -m banking sync` | `test_sync_step_runs_the_same_command_as_local` |
+| 8 | Todos los `${{ secrets.* }}` están bajo `env:` | `test_every_required_secret_is_declared_exactly_once` + `test_workflow_secret_guards.py::test_no_secret_expression_is_interpolated_into_a_run_block` |
+| 9 | Los 14 nombres de secreto están declarados | `test_every_required_secret_is_declared_exactly_once` |
+| 10 | Resumen con `if: always()` y `$GITHUB_STEP_SUMMARY` | `test_summary_step_publishes_even_when_the_sync_fails`, `test_summary_reports_state_and_process_exit_code`, `test_summary_lists_banks_movements_failures_and_duration`, `test_summary_degrades_gracefully_without_process_output` |
+| 11 | Paso final que propaga el exit code | `test_final_step_propagates_the_process_exit_code`, `test_summary_is_published_before_the_exit_code_is_propagated` |
+| 12 | Sin formas de credencial literal en el YAML | `test_workflow_secret_guards.py::test_workflows_contain_no_literal_credentials` |
+| 13 | La validación precede a la sincronización | `test_configuration_is_validated_before_any_external_call` |
+| 14 | `ci.yml` sin cambios (triggers + cinco gates) | `test_workflow_secret_guards.py::test_ci_workflow_still_gates_every_commit`, `test_sync_workflow_is_a_separate_file_from_ci` |
+
+Cobertura adicional no exigida por el contrato: `test_python_runtime_and_actions_are_pinned`
+(versiones de acciones y Python), `test_runtime_dependencies_are_installed_and_audited`
+(FR-013) y `test_configuration_is_provisioned_into_the_existing_mechanisms` (Decisión 3).
