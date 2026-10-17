@@ -23,7 +23,7 @@ from datetime import datetime
 from email.message import EmailMessage
 from enum import Enum
 
-from banking.config.secret_store import SecretStore
+from banking.config.secret_store import ConfigurationError, DecryptionError, SecretStore
 from banking.sync import BankOutcome
 
 logger = logging.getLogger(__name__)
@@ -78,15 +78,19 @@ class EmailNotifier:
         """Read the SMTP configuration from the store.
 
         Returns:
-            The configuration, or ``None`` when any key is missing or
-            ``SMTP_PORT`` is not an integer. Never raises.
+            The configuration, or ``None`` when any key is missing, the store is
+            unavailable, or ``SMTP_PORT`` is not an integer. Never raises.
         """
-        store = self._store if self._store is not None else SecretStore()
+        try:
+            store = self._store if self._store is not None else SecretStore()
+        except (ConfigurationError, DecryptionError):
+            logger.warning("Email notification skipped: the SecretStore is not available")
+            return None
         values: dict[str, str] = {}
         for key in _REQUIRED_KEYS:
             try:
                 values[key] = store.get(key)
-            except KeyError:
+            except (KeyError, ConfigurationError, DecryptionError):
                 logger.warning("Email notification skipped: missing configuration key %s", key)
                 return None
 
@@ -193,7 +197,14 @@ def _count_succeeded(outcomes: list[BankOutcome]) -> int:
 
 def _build_subject(outcomes: list[BankOutcome], sheets_error: str | None, tab_name: str) -> str:
     """Build the email subject for the run's failure mode (see research.md)."""
-    raise NotImplementedError("subject formatting lands with the user stories")
+    succeeded = _count_succeeded(outcomes)
+    total = len(outcomes)
+
+    if sheets_error is None:
+        if succeeded and succeeded < total:
+            return f"Sincronización parcial: {succeeded}/{total} bancos — fallo en {tab_name}"
+        raise NotImplementedError("total-failure subject lands with US2")
+    raise NotImplementedError("sheets-failure subject lands with US2")
 
 
 def _build_body(
@@ -203,9 +214,25 @@ def _build_body(
     duration_seconds: float,
 ) -> str:
     """Build the plain-text email body describing the failure (see contracts/)."""
-    raise NotImplementedError("body formatting lands with the user stories")
+    lines = [
+        "La sincronización bancaria terminó con errores.",
+        "",
+        f"Fecha: {_format_timestamp()}",
+        f"Pestaña: {tab_name}",
+        f"Duración: {duration_seconds:.2f}s",
+        "",
+        "Bancos:",
+    ]
+    for outcome in outcomes:
+        if outcome.succeeded:
+            lines.append(f"  - {outcome.bank_name}: {outcome.rows_written} movimientos")
+        else:
+            lines.append(f"  - {outcome.bank_name}: FALLÓ — {outcome.failure_reason}")
+    if sheets_error is not None:
+        lines.extend(["", f"ERROR (Sheets): {sheets_error}"])
+    return "\n".join(lines) + "\n"
 
 
 def _format_timestamp() -> str:
-    """Return the run timestamp as ``YYYY-MM-DD HH:MM:SS``."""
-    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    """Return the run timestamp as ``YYYY-MM-DD HH:MM``."""
+    return datetime.now().strftime("%Y-%m-%d %H:%M")

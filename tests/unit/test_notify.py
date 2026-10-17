@@ -10,8 +10,9 @@ import pytest
 from pytest_mock import MockerFixture
 
 from banking import notify
-from banking.config.secret_store import SecretStore
+from banking.config.secret_store import ConfigurationError, SecretStore
 from banking.notify import DeliveryStatus, EmailConfig, EmailNotifier
+from banking.sync import BankOutcome
 
 _SMTP_VALUES = {
     "SMTP_HOST": "smtp.example.com",
@@ -136,6 +137,25 @@ def test_load_config_returns_none_when_the_port_is_not_an_integer(
     assert not any(r.levelno >= logging.ERROR for r in records)
 
 
+def test_load_config_returns_none_when_the_secret_store_is_unavailable(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """No master key (or an unreadable store) is missing configuration, not a failure."""
+
+    def _unavailable(env_file: object = None) -> SecretStore:
+        raise ConfigurationError("BANKING_MASTER_KEY environment variable is not set.")
+
+    monkeypatch.setattr(notify, "SecretStore", _unavailable)
+    notifier = EmailNotifier()
+
+    with caplog.at_level(logging.DEBUG, logger="banking.notify"):
+        config = notifier._load_config()
+
+    assert config is None
+    assert any(r.levelno == logging.WARNING for r in caplog.records)
+    assert not any(r.levelno >= logging.ERROR for r in caplog.records)
+
+
 def test_load_config_never_logs_the_password(caplog: pytest.LogCaptureFixture) -> None:
     notifier = EmailNotifier(store=_store_with())
 
@@ -246,3 +266,94 @@ def test_default_smtp_factory_uses_smtp_ssl_with_the_configured_host_and_a_timeo
     notify._default_smtp_factory(config)
 
     smtp_ssl.assert_called_once_with("smtp.example.com", 465, timeout=notify._SMTP_TIMEOUT_SECONDS)
+
+
+# --- US1: fallo parcial ------------------------------------------------------
+
+
+def _outcomes(*specs: tuple[str, bool, int | None, str | None]) -> list[BankOutcome]:
+    return [
+        BankOutcome(bank_name=name, succeeded=succeeded, rows_written=rows, failure_reason=reason)
+        for name, succeeded, rows, reason in specs
+    ]
+
+
+def _smtp_double(mocker: MockerFixture) -> tuple[smtplib.SMTP, Mock]:
+    smtp = mocker.Mock(spec=smtplib.SMTP)
+    return smtp, mocker.Mock(return_value=smtp)
+
+
+def _sent_message(smtp: smtplib.SMTP) -> EmailMessage:
+    assert isinstance(smtp.send_message.call_args, type(smtp.send_message.call_args))
+    message = smtp.send_message.call_args.args[0]
+    assert isinstance(message, EmailMessage)
+    return message
+
+
+def _partial_outcomes() -> list[BankOutcome]:
+    return _outcomes(
+        ("ING España", True, 3, None),
+        ("Revolut", False, None, "sesión expirada"),
+        ("MyInvestor", True, 2, None),
+        ("Banco Sabadell", True, 1, None),
+    )
+
+
+def test_notify_failure_partial_sends_one_email_with_subject_headers_and_body(
+    mocker: MockerFixture,
+) -> None:
+    smtp, factory = _smtp_double(mocker)
+    notifier = EmailNotifier(store=_store_with(), smtp_factory=factory)
+
+    status = notifier.notify_failure(
+        outcomes=_partial_outcomes(),
+        sheets_error=None,
+        tab_name="2026-08",
+        duration_seconds=3.42,
+    )
+
+    assert status is DeliveryStatus.SENT
+    smtp.send_message.assert_called_once()
+    message = _sent_message(smtp)
+    assert message["Subject"] == "Sincronización parcial: 3/4 bancos — fallo en 2026-08"
+    assert message["From"] == _SMTP_VALUES["SMTP_USER"]
+    assert message["To"] == _SMTP_VALUES["NOTIFY_EMAIL_TO"]
+    assert "text/plain" in message["Content-Type"]
+    assert 'charset="utf-8"' in message["Content-Type"]
+
+    body = message.get_content()
+    assert "Fecha:" in body
+    assert "Pestaña: 2026-08" in body
+    assert "Duración: 3.42s" in body
+    for name, rows in [("ING España", 3), ("MyInvestor", 2), ("Banco Sabadell", 1)]:
+        assert f"- {name}: {rows} movimientos" in body
+    assert "- Revolut: FALLÓ — sesión expirada" in body
+    assert _SMTP_VALUES["SMTP_PASSWORD"] not in body
+    assert _SMTP_VALUES["SMTP_PASSWORD"] not in str(message["Subject"])
+
+
+def test_notify_failure_partial_with_two_failed_banks_sends_a_single_email(
+    mocker: MockerFixture,
+) -> None:
+    smtp, factory = _smtp_double(mocker)
+    notifier = EmailNotifier(store=_store_with(), smtp_factory=factory)
+    outcomes = _outcomes(
+        ("ING España", True, 3, None),
+        ("Revolut", False, None, "RateLimitExceededError: límite alcanzado"),
+        ("MyInvestor", False, None, "EnableBankingAPIError: 500"),
+        ("Banco Sabadell", True, 4, None),
+    )
+
+    status = notifier.notify_failure(
+        outcomes=outcomes, sheets_error=None, tab_name="2026-08", duration_seconds=1.0
+    )
+
+    assert status is DeliveryStatus.SENT
+    smtp.send_message.assert_called_once()
+    message = _sent_message(smtp)
+    assert message["Subject"] == "Sincronización parcial: 2/4 bancos — fallo en 2026-08"
+    body = message.get_content()
+    assert "RateLimitExceededError: límite alcanzado" in body
+    assert "EnableBankingAPIError: 500" in body
+    assert "- ING España: 3 movimientos" in body
+    assert "- Banco Sabadell: 4 movimientos" in body
