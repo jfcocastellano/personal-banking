@@ -324,6 +324,115 @@ def test_run_sync_sheets_failure_logs_error_without_leaking_document_id(
     assert "secret-doc-id" not in message
 
 
+# --- IT6: contexto estructurado en las excepciones del pipeline (FR-009) ----
+
+
+def test_all_banks_failed_error_carries_outcomes_and_tab_name() -> None:
+    """A total failure surfaces the four per-bank outcomes, not just a string."""
+    connectors = _four_connectors()
+    connectors[0].fetch_transactions.side_effect = ReauthorizationRequiredError("ing boom")
+    connectors[1].fetch_transactions.side_effect = RateLimitExceededError("revolut boom")
+    connectors[2].fetch_transactions.side_effect = EnableBankingAPIError("myinvestor boom")
+    connectors[3].fetch_transactions.side_effect = RuntimeError("sabadell boom")
+
+    with pytest.raises(AllBanksFailedError) as excinfo:
+        run_sync(
+            connectors=connectors,
+            writer=Mock(spec=SheetsWriter),
+            document_id="doc-id",
+            today=date(2026, 8, 15),
+        )
+
+    exc = excinfo.value
+    assert exc.outcomes is not None
+    assert [(o.bank_name, o.succeeded) for o in exc.outcomes] == [
+        ("ING España", False),
+        ("Revolut", False),
+        ("MyInvestor", False),
+        ("Banco Sabadell", False),
+    ]
+    assert [o.failure_reason for o in exc.outcomes] == [
+        "ing boom",
+        "revolut boom",
+        "myinvestor boom",
+        "sabadell boom",
+    ]
+    assert exc.tab_name == "2026-08"
+    # The rendered message is unchanged from IT5.
+    assert str(exc) == (
+        "All four banks failed: ING España: ing boom; Revolut: revolut boom; "
+        "MyInvestor: myinvestor boom; Banco Sabadell: sabadell boom"
+    )
+
+
+def test_sheets_sync_error_carries_outcomes_and_tab_name() -> None:
+    """A Sheets failure keeps the outcomes gathered before the write attempt."""
+    connectors = _four_connectors(
+        ing_txs=[
+            Transaction(date(2026, 8, 1), Decimal("10.00"), "EUR", "ING tx"),
+            Transaction(date(2026, 8, 2), Decimal("-3.00"), "EUR", "ING tx 2"),
+        ],
+        revolut_txs=[Transaction(date(2026, 8, 3), Decimal("-5.00"), "EUR", "Revolut tx")],
+    )
+    writer = Mock(spec=SheetsWriter)
+    writer.write.side_effect = SheetsAccessError("no access")
+
+    with pytest.raises(SheetsSyncError) as excinfo:
+        run_sync(
+            connectors=connectors,
+            writer=writer,
+            document_id="doc-id",
+            today=date(2026, 8, 15),
+        )
+
+    exc = excinfo.value
+    assert exc.outcomes is not None
+    assert [(o.bank_name, o.succeeded) for o in exc.outcomes] == [
+        ("ING España", True),
+        ("Revolut", True),
+        ("MyInvestor", True),
+        ("Banco Sabadell", True),
+    ]
+    assert [o.rows_written for o in exc.outcomes] == [2, 1, 0, 0]
+    assert exc.tab_name == "2026-08"
+    assert str(exc) == "no access"
+
+
+def test_sheets_sync_error_keeps_failed_bank_outcomes_alongside_sheets_failure() -> None:
+    """The combined case (bank failures + Sheets failure) keeps both facts."""
+    connectors = _four_connectors(
+        ing_txs=[Transaction(date(2026, 8, 1), Decimal("10.00"), "EUR", "ING tx")]
+    )
+    connectors[1].fetch_transactions.side_effect = RateLimitExceededError("revolut boom")
+    writer = Mock(spec=SheetsWriter)
+    writer.write.side_effect = SheetsAccessError("no access")
+
+    with pytest.raises(SheetsSyncError) as excinfo:
+        run_sync(
+            connectors=connectors,
+            writer=writer,
+            document_id="doc-id",
+            today=date(2026, 8, 15),
+        )
+
+    outcomes = excinfo.value.outcomes
+    assert outcomes is not None
+    assert [o.succeeded for o in outcomes] == [True, False, True, True]
+    assert outcomes[1].failure_reason == "revolut boom"
+
+
+@pytest.mark.parametrize("exc_class", [AllBanksFailedError, SheetsSyncError])
+def test_pipeline_errors_remain_constructible_without_context(
+    exc_class: type[Exception],
+) -> None:
+    """Backwards compatibility: older callers build these with a message only."""
+    exc = exc_class("boom")
+
+    assert str(exc) == "boom"
+    assert exc.outcomes is None  # type: ignore[attr-defined]
+    assert exc.tab_name is None  # type: ignore[attr-defined]
+
+
 # --- Guarda de invariante: un sync sin conectores no es un exito -------------
 
 
