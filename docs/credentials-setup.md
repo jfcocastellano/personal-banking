@@ -197,7 +197,7 @@ caracteres, que exige tener la verificación en dos pasos activada.
 
 ```bash
 python -m banking secrets set SMTP_HOST smtp.gmail.com
-python -m banking secrets set SMTP_PORT 587
+python -m banking secrets set SMTP_PORT 465
 python -m banking secrets set SMTP_USER <tu-correo@gmail.com>
 python -m banking secrets set SMTP_PASSWORD <app-password-sin-espacios>
 python -m banking secrets set NOTIFY_EMAIL_TO <destinatario@dominio>
