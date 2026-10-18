@@ -175,6 +175,9 @@ def test_runtime_dependencies_are_installed_and_audited() -> None:
     commands = _all_run_text()
     assert "pip install -r requirements.txt" in commands
     assert "pip install -e ." in commands
+    assert "pip install pip-audit==2.10.1" in commands, (
+        "pip-audit is invoked below, so the workflow must install it explicitly"
+    )
     assert "pip-audit -r requirements.txt" in commands
     assert "requirements-dev.txt" not in commands, "The scheduler must not install dev tooling"
 

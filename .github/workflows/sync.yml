@@ -83,6 +83,10 @@ jobs:
         run: |
           pip install -r requirements.txt
           pip install -e .
+          # pip-audit es tooling de CI, no una dependencia de runtime: se instala
+          # aparte con el mismo pin que el fichero de dependencias de desarrollo
+          # (el scheduler no debe arrastrar todo el toolchain de test).
+          pip install pip-audit==2.10.1
           pip-audit -r requirements.txt
 
       # 2. Los secretos se materializan en los dos mecanismos que ya usa el
