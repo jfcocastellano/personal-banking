@@ -19,7 +19,7 @@ sola vez está en [`quickstart.md`](../quickstart.md) § IT7.
 | # | Secreto | Qué es | Dónde se obtiene | Caduca |
 |---|---|---|---|---|
 | 1 | `BANKING_MASTER_KEY` | Clave AES-256 (64 hex) del `SecretStore` | La generas tú | No (si la pierdes, el `.env` es ilegible) |
-| 2-5 | `ENABLE_BANKING_SESSION_ID_{ING,REVOLUT,MYINVESTOR,SABADELL}` | Consentimiento PSD2 por banco | Flujo `/auth` + `/sessions` de Enable Banking (§ 3) | Sí, ~90 días |
+| 2-5 | `ENABLE_BANKING_SESSION_ID_{ING,REVOLUT,MYINVESTOR,SABADELL}` | Consentimiento PSD2 por banco | Flujo `/auth` + `/sessions` de Enable Banking (§ 3) | Sí, hasta el `maximum_consent_validity` del ASPSP (90-180 días) |
 | 6 | `ENABLE_BANKING_APP_ID` | Identificador de tu aplicación en Enable Banking | Panel de Enable Banking | No |
 | 7 | `ENABLE_BANKING_PRIVATE_KEY` | Clave RSA (PEM) con la que se firma el JWT | Panel de Enable Banking (o generada por ti) | No |
 | 8 | `GOOGLE_SHEETS_CREDENTIALS` | JSON de la cuenta de servicio de Google Cloud | Google Cloud Console (§ 4) | No |
@@ -107,7 +107,7 @@ from banking.connectors.enable_banking import _build_jwt, _load_signing_credenti
 
 cred = _load_signing_credential(None)
 headers = {"Authorization": f"Bearer {_build_jwt(cred)}"}
-valid_until = (dt.datetime.now(dt.UTC) + dt.timedelta(days=90)).isoformat()
+valid_until = (dt.datetime.now(dt.UTC) + dt.timedelta(days=170)).isoformat()
 
 response = httpx.post(
     "https://api.enablebanking.com/auth",
@@ -116,8 +116,9 @@ response = httpx.post(
         "access": {"valid_until": valid_until},
         "aspsp": {"name": "ING", "country": "ES"},
         "state": "banca-personal",
-        "redirect_url": "https://localhost:8080/callback",
+        "redirect_url": "https://nasts251cloud.myqnapcloud.com:5051/callback",
         "psu_type": "personal",
+        "language": "es",
     },
     timeout=30,
 )
@@ -126,12 +127,32 @@ print(response.json()["url"])
 PY
 ```
 
+Tres detalles de este bloque, que son los que fallan cuando algo no cierra:
+
+- **`redirect_url` debe coincidir exactamente** con el registrado en tu
+  aplicación. Consultalo con `GET /application`; en este proyecto es
+  `https://nasts251cloud.myqnapcloud.com:5051/callback`. Cualquier otra cosa
+  (por ejemplo `https://localhost:8080/callback`) devuelve
+  `REDIRECT_URI_NOT_ALLOWED` y quema el `authorization_id`.
+- **`valid_until` va por debajo del máximo del ASPSP**, que se publica en
+  `GET /aspsps` como `maximum_consent_validity`. Banco Sabadell permite 180 días,
+  así que se piden 170: rozar el límite hace que el banco rechace el
+  consentimiento por desfase de reloj.
+- **`psu_type` y `language` son obligatorios en la práctica**: sin ellos algunos
+  ASPSPs devuelven el consentimiento en otro idioma o rechazan el `psu_type`
+  implícito.
+
 **3.2 — Autorizar en el navegador**
 
-Abre la URL que imprime. Te llevará al login de ING; tras autenticarte y dar el
-consentimiento, el banco redirige a `https://localhost:8080/callback?code=...`.
-Como no hay servidor escuchando, el navegador mostrará un error de conexión: da
-igual, **copia el valor de `code`** de la barra de direcciones (caduca en minutos).
+Abre la URL que imprime, **en un navegador real y con cookies** (la capa de
+consentimiento de Enable Banking, `tilisy.enablebanking.com`, mantiene la sesión
+en una cookie `sessionid`; sin ella responde `400 {"detail":"Missing session id"}`,
+así que no sirve seguirla con `curl` ni pegarle saltos a mano). Tras
+autenticarte y dar el consentimiento, el banco redirige al `redirect_url`
+registrado con `?code=...&state=...`. Si el callback no está levantado, el
+navegador muestra un error de conexión: da igual, **copia el valor de `code`** de
+la barra de direcciones (caduca en minutos) y no vuelvas a abrir esa URL — cada
+`authorization_id` es de un solo uso.
 
 **3.3 — Canjear el `code` por el `session_id`**
 
@@ -164,6 +185,50 @@ python -m banking secrets set ENABLE_BANKING_SESSION_ID_ING <session_id>
 > Si el banco devuelve alguna variante de nombre de ASPSP, ajústala en
 > `aspsp.name` / `country` (por ejemplo `"ING"` + `"ES"` es lo habitual para ING
 > España). El conector solo necesita que `GET /sessions/{id}` devuelva la cuenta.
+
+**3.5 — Particularidades: Banco Sabadell (y clientes de ActivoBank)**
+
+ASPSP a usar: `{"name": "Banco de Sabadell", "country": "ES"}` (BIC
+`BSABESBBXXX`, `maximum_consent_validity` 180 días). No existe un ASPSP
+"ActivoBank" español en Enable Banking.
+
+El login PSD2 de Sabadell se sirve por **marca**, y la marca la fija el host, no
+la pestaña de la pantalla:
+
+| Host del login | Marca | `SERVICE_PROCEDENCE` | Pestañas |
+|---|---|---|---|
+| `openapi.bancsabadell.com` | bancsabadell | `CA01` | Particular (`CA01`), Empresa (`CA02`) |
+| `openapi.activobank.com` | activobank | `CA03` | ninguna (canal fijo) |
+
+Ese valor viaja como **header** (`HEADER.SERVICE_PROCEDENCE`), no por URL, y
+Enable Banking solo rutea al host de Sabadell. Un cliente de ActivoBank no puede
+ser atendido por ese canal.
+
+**Estado: bloqueado (escalado a Enable Banking el 2026-10-21).** Síntoma exacto,
+después de que el banco **acepte** el login:
+
+```
+[{"i18nCode":"unsupported_response_type",
+  "description":"Client does not support this response type."}]
+```
+
+Cómo leerlo, para no perder tiempo la próxima vez:
+
+- La SPA de Sabadell muestra **el mismo modal genérico** ("¡Vaya! Los datos
+  introducidos no son correctos.") tanto si fallan las credenciales como si falla
+  el paso `authorize` posterior. Ese cartel **no prueba** que la contraseña esté
+  mal.
+- `authorize` corre solo después de un login `200` con `access_token`, así que
+  `unsupported_response_type` implica credenciales correctas y rechazo del cliente
+  TPP (`PSDFI-FINFSA-2988499-7`, second client `PSDES-RDS-4000`) en el hub.
+- No hay nada que ajustar del lado del usuario: no cambia con la pestaña, con el
+  navegador ni con reintentos. Reintentar solo quema `authorization_id`.
+- Akamai responde `403 Access Denied` a cualquier sondeo server-side del endpoint
+  de login: la verificación requiere un navegador real.
+
+Mientras siga así, `ENABLE_BANKING_SESSION_ID_SABADELL` se queda en
+`unconfigured` (§ 6) y las ejecuciones terminan en fallo parcial, que es el
+comportamiento correcto.
 
 ---
 
@@ -205,11 +270,13 @@ python -m banking secrets set NOTIFY_EMAIL_TO <destinatario@dominio>
 
 ---
 
-## 6. Los tres bancos que todavía no están en Enable Banking
+## 6. Los bancos sin sesión todavía
 
 El código instancia siempre los cuatro conectores y el workflow exige que los 14
-secretos existan, así que hasta que autorices Revolut, MyInvestor y Sabadell hay
-que darles un valor inerte para que el arranque no se bloquee:
+secretos existan, así que hasta que autorices cada banco hay que darle un valor
+inerte para que el arranque no se bloquee. Sabadell también va acá por ahora:
+existe en Enable Banking, pero su consentimiento está bloqueado del lado del
+proveedor (§ 3.5).
 
 ```bash
 for bank in REVOLUT MYINVESTOR SABADELL; do
