@@ -226,6 +226,37 @@ Cómo leerlo, para no perder tiempo la próxima vez:
 - Akamai responde `403 Access Denied` a cualquier sondeo server-side del endpoint
   de login: la verificación requiere un navegador real.
 
+**Respuesta del proveedor (2026-10-21) y por qué el desvío no es accionable.**
+Enable Banking contestó que no tiene documentación específica de Sabadell
+("Sabadell-specific open-banking details are not yet available", es decir, el
+conector está armado sobre la plantilla genérica de Redsys) y derivó el caso al
+helpdesk de TPPs de Redsys sin responder ninguna de las dos preguntas:
+
+| Pregunta abierta | Estado |
+|---|---|
+| ¿Qué `response_type` soporta el cliente `PSDFI-FINFSA-2988499-7` / second client `PSDES-RDS-4000` en este ASPSP? | sin respuesta |
+| ¿Cómo autoriza un cliente ActivoBank ES a través del conector de Sabadell? | sin respuesta |
+
+La derivación no se puede ejecutar desde acá: el helpdesk de Redsys es para
+**TPPs registrados**, y el TPP ante Redsys es Enable Banking, no el titular de la
+cuenta. `hubpsd2.redsys.es` responde `403` a cualquier acceso que no sea de un
+TPP registrado, y no existe portal público de soporte. Cualquier ticket abierto
+por un particular rebota.
+
+Estado de la escalada: se reclamó a Enable Banking que abra el ticket de Redsys
+por su cuenta, o que confirme por escrito que su conector de Sabadell hoy no
+puede soportar este ASPSP. En paralelo, un reclamo del titular a Banco Sabadell
+es válido y está fundado —el acceso de terceros es una obligación PSD2 del banco,
+y el rechazo ocurre en su `authorize`—, aunque su efecto esperable es lento.
+
+Qué destrabaría esto, en orden de probabilidad:
+
+1. Que Enable Banking corrija el registro del cliente o el `response_type` que
+   pide su conector (§ 3.1). Es su bug y no requiere cambios acá.
+2. Que agreguen un ASPSP ActivoBank ES que rutee al host con `CA03`.
+3. Que se use otro agregador con conector propio de Sabadell; implicaría escribir
+   otro conector, porque todo el proyecto está apoyado en Enable Banking.
+
 Mientras siga así, `ENABLE_BANKING_SESSION_ID_SABADELL` se queda en
 `unconfigured` (§ 6) y las ejecuciones terminan en fallo parcial, que es el
 comportamiento correcto.
