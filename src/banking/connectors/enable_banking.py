@@ -5,6 +5,7 @@ import json
 import logging
 import os
 import time
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal, InvalidOperation
@@ -26,6 +27,19 @@ _CONFIG_DIR_ENV = "BANKING_EB_CONFIG_DIR"
 _DEFAULT_CONFIG_DIR = Path.home() / ".config" / "banca-personal"
 _JWT_TTL_SECONDS = 300
 _MAX_PAGES = 100
+
+# Closing booked (CLBD) is the most trustworthy: it is the settled end-of-period
+# balance, unlike interim (ITBD) or available (CLAV/ITAV) figures.
+_BALANCE_PREFERENCE: tuple[str, ...] = (
+    "CLBD",
+    "ITBD",
+    "CLAV",
+    "ITAV",
+    "OPBD",
+    "OPAV",
+    "FWAV",
+    "XPCD",
+)
 
 
 class ConnectorConfigError(Exception):
@@ -60,6 +74,16 @@ class Transaction:
     amount: Decimal
     currency: str
     description: str
+
+
+@dataclass(frozen=True)
+class Balance:
+    """A single account balance reported by Enable Banking."""
+
+    amount: Decimal
+    currency: str
+    balance_type: str
+    reference_date: date | None
 
 
 @dataclass(frozen=True)
@@ -168,6 +192,69 @@ def _parse_transaction(raw: dict[str, Any]) -> Transaction | None:
     )
 
 
+def _parse_balance(raw: dict[str, Any]) -> Balance | None:
+    """Parse one API balance record into a Balance, or None if unusable.
+
+    Never raises on malformed provider data: an entry that is not a mapping, has
+    no usable ``balance_amount``, or whose amount is not a finite decimal is
+    skipped. A missing or unparseable ``reference_date`` is tolerated (None).
+    """
+    if not isinstance(raw, dict):
+        logger.warning("Skipping balance record that is not a mapping: %r", raw)
+        return None
+
+    try:
+        amount_block = raw["balance_amount"]
+        if not isinstance(amount_block, dict):
+            raise KeyError("balance_amount")
+        amount = Decimal(str(amount_block["amount"]))
+        currency = str(amount_block["currency"])
+    except (KeyError, InvalidOperation, ValueError, TypeError) as exc:
+        logger.warning("Skipping balance record with missing or invalid fields: %s", exc)
+        return None
+
+    if not amount.is_finite():
+        logger.warning("Skipping balance record with a non-finite amount: %s", amount)
+        return None
+
+    balance_type = raw.get("balance_type")
+    reference_date: date | None = None
+    raw_reference_date = raw.get("reference_date")
+    if raw_reference_date is not None:
+        try:
+            reference_date = date.fromisoformat(str(raw_reference_date))
+        except ValueError:
+            logger.warning("Balance record has an invalid reference_date: %r", raw_reference_date)
+
+    return Balance(
+        amount=amount,
+        currency=currency,
+        balance_type=str(balance_type) if balance_type else "",
+        reference_date=reference_date,
+    )
+
+
+def _select_balance(balances: Sequence[Balance]) -> Balance | None:
+    """Pick one balance by the documented preference order, first match wins.
+
+    Unknown or absent types degrade to the first entry in provider order so an
+    unexpected vocabulary yields a value instead of an empty cell.
+    """
+    if not balances:
+        return None
+
+    by_type: dict[str, Balance] = {}
+    for balance in balances:
+        by_type.setdefault(balance.balance_type.upper(), balance)
+
+    for preferred_type in _BALANCE_PREFERENCE:
+        match = by_type.get(preferred_type)
+        if match is not None:
+            return match
+
+    return balances[0]
+
+
 def _check_session_usable(response: httpx.Response) -> None:
     """Raise ReauthorizationRequiredError if the PSD2 session is unusable.
 
@@ -242,6 +329,71 @@ class EnableBankingConnector:
         if not accounts:
             raise EnableBankingAPIError("Enable Banking session has no linked accounts.")
         return str(accounts[0])
+
+    def fetch_balance(self) -> Balance | None:
+        """Return the account's most trustworthy reported balance, or None.
+
+        PSD2 reports the balance of the moment it is requested; there is no
+        month-end historical balance. ``None`` means the provider reported no
+        usable balance for this account.
+        """
+        credential = _load_signing_credential(self._config_dir)
+        session_id = SecretStore().get(self._SESSION_ID_KEY)
+        # Balances are not date-ranged; the account lookup reuses the existing
+        # machinery, which only needs a date pair for its error logging.
+        today = date.today()
+        account_id = self._resolve_account_id(credential, session_id, today, today)
+
+        token = _build_jwt(credential)
+        response = self._http_client.get(
+            f"{_BASE_URL}/accounts/{account_id}/balances",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        try:
+            _check_session_usable(response)
+        except (
+            ReauthorizationRequiredError,
+            RateLimitExceededError,
+            EnableBankingAPIError,
+        ) as exc:
+            logger.error(
+                "Connector %s: balances, as of %s, status=error, reason=%s",
+                self.BANK_NAME,
+                today.isoformat(),
+                exc,
+            )
+            raise
+
+        payload = response.json()
+        raw_balances = payload.get("balances") if isinstance(payload, dict) else None
+        if not isinstance(raw_balances, list):
+            raw_balances = []
+
+        balances = [
+            balance
+            for balance in (_parse_balance(raw) for raw in raw_balances)
+            if balance is not None
+        ]
+        selected = _select_balance(balances)
+
+        if selected is None:
+            logger.info(
+                "Connector %s: balances, as of %s, no usable balance reported (raw entries: %d)",
+                self.BANK_NAME,
+                today.isoformat(),
+                len(raw_balances),
+            )
+            return None
+
+        logger.info(
+            "Connector %s: balances, as of %s, %s %s (%s), status=success",
+            self.BANK_NAME,
+            today.isoformat(),
+            selected.amount,
+            selected.currency,
+            selected.balance_type or "unknown type",
+        )
+        return selected
 
     def fetch_transactions(self, start_date: date, end_date: date) -> list[Transaction]:
         """Return all settled (BOOK) transactions in [start_date, end_date]."""
