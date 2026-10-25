@@ -101,3 +101,32 @@ Taller
 Viajes
 *Otros
 ```
+
+---
+
+## Verification record — 2026-10-25
+
+| Check | Result |
+| --- | --- |
+| `.venv/bin/python -m pytest tests/unit -q` | `259 passed` |
+| `.venv/bin/ruff check src tests` | `All checks passed!` |
+| `.venv/bin/ruff format --check src tests` | `47 files already formatted` |
+| `.venv/bin/mypy src` | `Success: no issues found in 20 source files` |
+| `python -m banking layout --month 2026-13` | exit `2`, working tree unchanged |
+
+Recorded by: `gentle-ai-verify`, read-only. Manual confirmation against the real
+document is still pending (it mutates the user's spreadsheet) and stays T007's
+remaining item.
+
+## Follow-ups from review
+
+Non-blocking findings from the native review, to be handled as separate work:
+
+- **R3-001** (`layout.py`, balance title offset): row 7 is deliberately empty
+  between the summary total and the balance panel. Not a defect; if the gap is
+  unwanted, changing it moves every balance row and is a layout contract change.
+- **R3-002** (`_write_grid`): the creation path writes the whole grid with
+  `USER_ENTERED` so formulas evaluate, which means a bank-supplied description
+  beginning with `=` is interpreted as a formula for the instant before the
+  expense region is cleared and rewritten raw. No persisted effect. Removing the
+  window means writing labels and formulas in two separate passes.
