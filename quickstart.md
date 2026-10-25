@@ -423,6 +423,33 @@ credenciales y comportamientos conocidos de la plataforma (retraso de hasta
 ~15 min, desactivación del cron por inactividad del repositorio, timeout de
 10 minutos sin email porque el proceso muere antes de notificar).
 
+## IT8 — Layout mensual de contabilidad
+
+IT8 agrega un segundo tab por mes con la estructura de la hoja de
+contabilidad manual: gastos individuales a la izquierda, gastos comunes en el
+centro y resumen con saldos a la derecha.
+
+```bash
+.venv/bin/python -m banking layout                  # mes en curso
+.venv/bin/python -m banking layout --month 2026-09  # mes concreto
+```
+
+- El tab se llama `<YYYY-MM> Gastos`; el `<YYYY-MM>` que escribe el sync no cambia.
+- La primera corrida crea los tres bloques. Las siguientes reescriben **solo**
+  `B4:E403`; todo lo que edites en `G:H` y `J:K` se respeta.
+- Los totales son fórmulas (dos `SUMIF` sobre la columna de importes; el neto suma ambas
+  celdas), así que un importe corregido a mano se refleja solo.
+- El bloque de gastos comunes trae el catálogo de categorías con los importes vacíos y se llena a
+  mano: ninguna API informa esa categorización. Los movimientos de Sabadell llegarán a la columna
+  de gastos individuales cuando exista esa sesión PSD2; hoy el bloque central arranca vacío.
+- El saldo de cada cuenta es el que informa el banco **en el momento de la
+  consulta**. PSD2 no expone saldos históricos, así que el cierre real de mes
+  solo coincide si la corrida cae el último día del mes. La fila `Saldos al`
+  imprime la fecha de referencia del banco.
+- N26 aparece en la hoja original pero no tiene conector en el proyecto.
+
+Guía completa, límites y verificación manual: `specs/008-monthly-sheet-layout/quickstart.md`.
+
 ## Notes
 
 - `.env` is git-ignored — never commit it
