@@ -434,6 +434,9 @@ centro y resumen con saldos a la derecha.
 .venv/bin/python -m banking layout --month 2026-09  # mes concreto
 ```
 
+Si no tenés `BANKING_MASTER_KEY` en la máquina, corré el mismo comando desde
+GitHub Actions: `Actions → Layout mensual → Run workflow`.
+
 - El tab se llama `<YYYY-MM> Gastos`; el `<YYYY-MM>` que escribe el sync no cambia.
 - La primera corrida crea los tres bloques. Las siguientes reescriben **solo**
   `B4:E403`; todo lo que edites en `G:H` y `J:K` se respeta.

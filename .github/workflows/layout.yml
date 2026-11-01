@@ -1,0 +1,169 @@
+name: Layout mensual
+
+# El layout necesita las mismas credenciales que el sync y ninguna vive en el
+# repositorio: se ejecuta donde están los secretos, no en la máquina del usuario.
+# No tiene programación: se dispara a mano mientras el cierre de mes siga siendo
+# una decisión humana.
+"on":
+  workflow_dispatch:
+    inputs:
+      month:
+        description: "Mes a generar en formato YYYY-MM (vacío = mes en curso)"
+        required: false
+        default: ""
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  layout:
+    name: Generar la pestaña de layout del mes
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # Mismo grupo que la sincronización: ambas escriben en el mismo documento y
+    # comparten la cuota de la API, así que nunca deben solaparse.
+    concurrency:
+      group: banking-sync
+      cancel-in-progress: false
+    env:
+      LAYOUT_MONTH: ${{ inputs.month }}
+      BANKING_MASTER_KEY: ${{ secrets.BANKING_MASTER_KEY }}
+      ENABLE_BANKING_SESSION_ID_ING: ${{ secrets.ENABLE_BANKING_SESSION_ID_ING }}
+      ENABLE_BANKING_SESSION_ID_REVOLUT: ${{ secrets.ENABLE_BANKING_SESSION_ID_REVOLUT }}
+      ENABLE_BANKING_SESSION_ID_MYINVESTOR: ${{ secrets.ENABLE_BANKING_SESSION_ID_MYINVESTOR }}
+      ENABLE_BANKING_SESSION_ID_SABADELL: ${{ secrets.ENABLE_BANKING_SESSION_ID_SABADELL }}
+      ENABLE_BANKING_APP_ID: ${{ secrets.ENABLE_BANKING_APP_ID }}
+      ENABLE_BANKING_PRIVATE_KEY: ${{ secrets.ENABLE_BANKING_PRIVATE_KEY }}
+      GOOGLE_SHEETS_CREDENTIALS: ${{ secrets.GOOGLE_SHEETS_CREDENTIALS }}
+      GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
+    steps:
+      # 1. El layout consume la misma cuota PSD2 (4 peticiones por cuenta y día)
+      #    que el sync: no se gasta nada si falta configuración o si el mes está
+      #    mal escrito. Ambas comprobaciones ocurren antes de la primera llamada.
+      - name: Validar configuración
+        run: |
+          set -u
+          missing=""
+          for name in \
+            BANKING_MASTER_KEY \
+            ENABLE_BANKING_SESSION_ID_ING \
+            ENABLE_BANKING_SESSION_ID_REVOLUT \
+            ENABLE_BANKING_SESSION_ID_MYINVESTOR \
+            ENABLE_BANKING_SESSION_ID_SABADELL \
+            ENABLE_BANKING_APP_ID \
+            ENABLE_BANKING_PRIVATE_KEY \
+            GOOGLE_SHEETS_CREDENTIALS \
+            GOOGLE_SHEET_ID; do
+            if [ -z "$(printenv "$name" || true)" ]; then
+              missing="$missing $name"
+            fi
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::Faltan secretos de GitHub:$missing"
+            exit 1
+          fi
+          echo "Los 9 secretos del layout están presentes."
+
+      - name: Validar mes
+        run: |
+          set -u
+          if [ -z "${LAYOUT_MONTH:-}" ]; then
+            echo "Sin mes indicado: se generará el mes en curso."
+            exit 0
+          fi
+          if ! printf '%s' "$LAYOUT_MONTH" | grep -Eq '^[0-9]{4}-(0[1-9]|1[0-2])$'; then
+            echo "::error::El mes «$LAYOUT_MONTH» no tiene el formato YYYY-MM."
+            exit 1
+          fi
+          echo "Mes solicitado: $LAYOUT_MONTH"
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Instalar dependencias
+        run: |
+          pip install -r requirements.txt
+          pip install -e .
+          pip install pip-audit==2.10.1
+          pip-audit -r requirements.txt
+
+      # 2. Los secretos se materializan en los dos mecanismos que ya usa el
+      #    código: el .env cifrado (SecretStore) y el fichero de firma RSA de
+      #    Enable Banking, que vive fuera del workspace ($RUNNER_TEMP).
+      - name: Provisionar configuración
+        run: |
+          set -eu
+          python -m banking secrets set ENABLE_BANKING_SESSION_ID_ING "$ENABLE_BANKING_SESSION_ID_ING"
+          python -m banking secrets set ENABLE_BANKING_SESSION_ID_REVOLUT "$ENABLE_BANKING_SESSION_ID_REVOLUT"
+          python -m banking secrets set ENABLE_BANKING_SESSION_ID_MYINVESTOR "$ENABLE_BANKING_SESSION_ID_MYINVESTOR"
+          python -m banking secrets set ENABLE_BANKING_SESSION_ID_SABADELL "$ENABLE_BANKING_SESSION_ID_SABADELL"
+          python -m banking secrets set GOOGLE_SHEETS_CREDENTIALS "$GOOGLE_SHEETS_CREDENTIALS"
+          python -m banking secrets set GOOGLE_SHEET_ID "$GOOGLE_SHEET_ID"
+
+          umask 077
+          mkdir -p "$RUNNER_TEMP/eb"
+          printf '%s\n' "$ENABLE_BANKING_PRIVATE_KEY" > "$RUNNER_TEMP/eb/private_key.pem"
+          chmod 600 "$RUNNER_TEMP/eb/private_key.pem"
+          printf '{"app_id": "%s", "private_key_path": "%s"}\n' \
+            "$ENABLE_BANKING_APP_ID" "$RUNNER_TEMP/eb/private_key.pem" \
+            > "$RUNNER_TEMP/eb/eb-config.json"
+          echo "BANKING_EB_CONFIG_DIR=$RUNNER_TEMP/eb" >> "$GITHUB_ENV"
+
+      # 3. El mismo comando que en local: el workflow no tiene lógica propia.
+      #    `set +e` evita abortar antes de publicar el resumen, y PIPESTATUS[0]
+      #    recupera el exit code del proceso (no el de tee). El mes viaja por
+      #    variable de entorno para que nunca se interpole en la línea de shell.
+      - name: Ejecutar layout
+        id: layout
+        run: |
+          set +e
+          set -o pipefail
+          args=()
+          if [ -n "${LAYOUT_MONTH:-}" ]; then
+            args+=(--month "$LAYOUT_MONTH")
+          fi
+          python -m banking layout "${args[@]}" 2>&1 | tee "$RUNNER_TEMP/layout-output.log"
+          code=${PIPESTATUS[0]}
+          echo "exit_code=$code" >> "$GITHUB_OUTPUT"
+          exit 0
+
+      # 4. Resumen en la página de la ejecución, con el significado de cada
+      #    código de salida del comando y la salida del propio proceso.
+      - name: Publicar resumen
+        if: always()
+        env:
+          EXIT_CODE: ${{ steps.layout.outputs.exit_code }}
+        run: |
+          set -u
+          log="$RUNNER_TEMP/layout-output.log"
+          {
+            echo "## Layout de contabilidad — $(date -u +%Y-%m-%d)"
+            echo
+            case "${EXIT_CODE:-}" in
+              0) echo "- **Estado**: pestaña escrita" ;;
+              1) echo "- **Estado**: fallo al escribir la pestaña (credenciales, permisos, cuota o más de 400 movimientos)" ;;
+              2) echo "- **Estado**: mes no válido, no se escribió nada" ;;
+              3) echo "- **Estado**: ningún banco pudo leer movimientos, no se escribió nada" ;;
+              *) echo "- **Estado**: fallo (el proceso no llegó a ejecutarse)" ;;
+            esac
+            echo "- **Exit code**: ${EXIT_CODE:-desconocido}"
+            echo
+            if [ -s "$log" ]; then
+              echo '```text'
+              grep -E '^(Layout completado|ERROR|  - )' "$log" || tail -n 20 "$log"
+              echo '```'
+            else
+              echo "Sin resumen del proceso: la ejecución falló antes de arrancar."
+              echo "Revisa los logs del paso anterior (validación o aprovisionamiento)."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Propagar resultado
+        if: always()
+        run: exit ${{ steps.layout.outputs.exit_code || 1 }}

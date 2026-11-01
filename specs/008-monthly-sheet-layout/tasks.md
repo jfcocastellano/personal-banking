@@ -130,3 +130,18 @@ Non-blocking findings from the native review, to be handled as separate work:
   beginning with `=` is interpreted as a formula for the instant before the
   expense region is cleared and rewritten raw. No persisted effect. Removing the
   window means writing labels and formulas in two separate passes.
+
+## T008 — Ejecutar el layout donde viven las credenciales
+
+El comando necesita `BANKING_MASTER_KEY` y los secretos bancarios, que no están
+en la máquina del usuario. Agregar un workflow `workflow_dispatch` que replique
+el aprovisionamiento de `sync.yml` y ejecute `python -m banking layout` con un
+input opcional `month`.
+
+**Acceptance**: el workflow valida los 9 secretos y el formato del mes antes de
+la primera llamada externa; comparte el grupo de concurrencia `banking-sync` con
+la sincronización; publica un resumen con el significado de los códigos 0–3 y
+propaga el exit code del proceso; `quickstart.md` documenta cómo dispararlo.
+
+El workflow no reimplementa ninguna decisión del comando: los códigos de salida
+1, 2 y 3 significan lo mismo que en local.
