@@ -613,3 +613,52 @@ def test_empty_error_body_adds_no_detail_suffix(
     message = _message_of(excinfo)
     assert "Provider detail" not in message
     assert "unexpected HTTP status: 500" in message
+
+
+def test_422_describes_the_session_id_shape_without_revealing_it(
+    caplog,
+    eb_config_dir,
+    fake_session_id_in_store,
+    mock_http_client,
+    tmp_env_file: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setenv("BANKING_ENV_FILE", str(tmp_env_file))
+    # A trailing newline never reaches the request: httpx rejects control
+    # characters in a URL with InvalidURL. Spaces do reach it.
+    padded_session_id = " 6f1c2f5a-0f0e-4a4c-9d1f-2f5a0f0e4a4c "
+    SecretStore(tmp_env_file).set("FAKE_SESSION_ID", padded_session_id)
+    session_response = httpx.Response(
+        422, json={"error": "WRONG_REQUEST_PARAMETERS", "message": "Wrong request parameters"}
+    )
+
+    connector = _FakeConnector(http_client=mock_http_client(_ok_handler, session_response))
+    with caplog.at_level(logging.ERROR, logger="banking.connectors.enable_banking"):
+        with pytest.raises(EnableBankingAPIError) as excinfo:
+            connector.fetch_transactions(date(2026, 8, 1), date(2026, 8, 31))
+
+    message = _message_of(excinfo)
+    assert "Session id shape:" in message
+    assert "length=38" in message
+    assert "surrounding-whitespace=True" in message
+    assert "empty=False" in message
+    assert "6f1c2f5a" not in message
+    assert padded_session_id.strip() not in message
+
+
+def test_422_reports_a_clean_session_id_as_clean(
+    caplog, eb_config_dir, fake_session_id_in_store, mock_http_client
+):
+    session_response = httpx.Response(
+        422, json={"error": "WRONG_REQUEST_PARAMETERS", "message": "Wrong request parameters"}
+    )
+
+    connector = _FakeConnector(http_client=mock_http_client(_ok_handler, session_response))
+    with caplog.at_level(logging.ERROR, logger="banking.connectors.enable_banking"):
+        with pytest.raises(EnableBankingAPIError) as excinfo:
+            connector.fetch_transactions(date(2026, 8, 1), date(2026, 8, 31))
+
+    message = _message_of(excinfo)
+    assert f"length={len(fake_session_id_in_store)}" in message
+    assert "surrounding-whitespace=False" in message
+    assert fake_session_id_in_store not in message

@@ -299,11 +299,30 @@ def _detail_suffix(response: httpx.Response) -> str:
     return f" Provider detail: {detail}." if detail else ""
 
 
-def _check_session_usable(response: httpx.Response) -> None:
+def _describe_session_id(session_id: str) -> str:
+    """Describe the shape of a session id without revealing its value.
+
+    A 422 on the session lookup means the provider rejected the parameters, and
+    the session id is the parameter in question. These four facts are enough to
+    tell a truncated value, a stray newline, or an empty secret apart from a
+    genuinely stale consent, and none of them exposes the secret itself.
+    """
+    stripped = session_id.strip()
+    return (
+        "Session id shape: "
+        f"length={len(session_id)}, "
+        f"empty={not stripped}, "
+        f"surrounding-whitespace={session_id != stripped}, "
+        f"non-ascii={not session_id.isascii()}."
+    )
+
+
+def _check_session_usable(response: httpx.Response, *, context: str = "") -> None:
     """Raise ReauthorizationRequiredError if the PSD2 session is unusable.
 
     Triggers on HTTP 403, or on a 200 response whose body reports a session
-    ``status`` of ``"expired"``.
+    ``status`` of ``"expired"``. ``context`` is appended to the 422 message,
+    where the caller can describe which parameters the provider rejected.
     """
     if response.status_code == 403:
         raise ReauthorizationRequiredError(
@@ -317,12 +336,13 @@ def _check_session_usable(response: httpx.Response) -> None:
             f"requests per account per day are allowed by regulation.{_detail_suffix(response)}"
         )
     if response.status_code == 422:
+        note = f" {context}" if context else ""
         raise EnableBankingAPIError(
-            "Enable Banking rejected the request as unprocessable (HTTP 422)."
-            f"{_detail_suffix(response)} A 422 on the session lookup usually means "
-            "the PSD2 consent is expired, revoked, or was granted to a different "
-            "application: re-authorize the bank through its browser consent flow "
-            "(docs/credentials-setup.md, section 3)."
+            "Enable Banking rejected the request parameters (HTTP 422)."
+            f"{_detail_suffix(response)}{note} A 422 is not a credentials problem: "
+            "the signature was accepted and the request understood, so a parameter "
+            "is wrong. If the session is stale, re-authorize the bank through its "
+            "browser consent flow (docs/credentials-setup.md, section 3)."
         )
     if response.status_code == 200:
         try:
@@ -365,7 +385,7 @@ class EnableBankingConnector:
             f"{_BASE_URL}/sessions/{session_id}", headers={"Authorization": f"Bearer {token}"}
         )
         try:
-            _check_session_usable(response)
+            _check_session_usable(response, context=_describe_session_id(session_id))
         except (
             ReauthorizationRequiredError,
             RateLimitExceededError,

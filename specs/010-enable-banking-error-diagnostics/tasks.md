@@ -55,16 +55,59 @@ texto es el único canal hacia el usuario y hacia el resumen del workflow.
 **Aceptación**: el mensaje de un 422 en la búsqueda de sesión incluye el
 detalle del proveedor y la indicación de reautorizar.
 
+**Corrección posterior a T004**: la primera redacción afirmaba que un 422 en la
+búsqueda de sesión "casi siempre" significa consentimiento vencido. La
+evidence la desmintió: el proveedor responde `WRONG_REQUEST_PARAMETERS`, es
+decir que rechaza un parámetro, no el consentimiento. El texto se reescribió
+para decir lo que se sabe — la firma se aceptó, un parámetro está mal — y para
+ofrecer la reautorización como condición, no como diagnóstico.
+
 ### T003 — Documentar el síntoma en el runbook
 
-`docs/credentials-setup.md`: qué significa un 422, dónde se ve y qué hacer.
-Sin inventar códigos de error del proveedor que no hayamos observado.
+`docs/credentials-setup.md` § 10.1: qué significa un 422, cómo se lee el
+mensaje y qué hacer según lo que muestre. Incluye el caso `InvalidURL` que
+descubrió T005.
+
+### T005 — Describir la forma del `session_id` sin revelarlo
+
+Un 422 en la búsqueda de sesión sólo puede estar rechazando el `session_id`, que
+es el único parámetro de esa llamada. El mensaje ahora incluye
+`length`, `empty`, `surrounding-whitespace` y `non-ascii` — nunca el valor —
+para distinguir un secreto mal cargado de un consentimiento que el banco ya no
+reconoce.
+
+**Aceptación**: hay tests de una sesión con espacios alrededor y de una limpia;
+ninguno de los dos mensajes contiene el valor del secreto.
+
+## Evidencia
+
+- Commit `45cbcd0` — cuerpo del proveedor en las cuatro ramas de error + rama
+  propia para 422.
+- Commit siguiente — corrección de redacción, `_describe_session_id` y runbook.
+- `266 passed`, `ruff check`, `ruff format --check`, `mypy src` limpios.
+- Corrida real del sync sobre la rama (`41299786210`), que por primera vez
+  informó la causa:
+
+  ```
+  MyInvestor: WRONG_REQUEST_PARAMETERS: Wrong request parameters
+  Banco Sabadell: WRONG_REQUEST_PARAMETERS: Wrong request parameters
+  ```
 
 ### T004 — Leer el detalle real de MyInvestor
 
-Volver a correr el sync y leer el cuerpo que ahora sí aparece en el log. Es el
-único modo de saber si el consentimiento de MyInvestor venció o si es otra cosa.
-Requiere autorización explícita: escribe en la hoja real.
+**Hecho.** El detalle apareció: el proveedor rechaza los parámetros, no la
+sesión. Qué sigue queda fuera de esta unidad: hay que verificar si el
+`session_id` guardado corresponde a la aplicación actual de Enable Banking, y
+sólo entonces decidir si la salida es renovar el consentimiento.
+
+## Seguimiento detectado
+
+- `httpx.InvalidURL` por un salto de línea en el secreto no se traduce a un
+  mensaje propio: sale como excepción del cliente. Es raro y ruidoso, pero no
+  es esta unidad.
+- La política de exit code: el sync parcial sale 3 y el workflow lo trata como
+  fallo, así que la alerta diaria de IT6 se repite desde el 2026-10-17. Vale
+  decidir si un parcial conocido debe seguir siendo rojo todos los días.
 
 ## Fuera de alcance
 
