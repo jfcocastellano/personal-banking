@@ -42,8 +42,20 @@ _BALANCE_PREFERENCE: tuple[str, ...] = (
 )
 
 
+_MAX_ERROR_DETAIL_CHARS = 300
+
+#: Inert value documented in docs/credentials-setup.md section 6 for a bank whose
+#: PSD2 consent does not exist yet. It keeps the workflow's secret check satisfied;
+#: it is not a session id and must never be sent to the provider.
+_UNCONFIGURED_SESSION_ID = "unconfigured"
+
+
 class ConnectorConfigError(Exception):
-    """Raised when eb-config.json or its referenced private key are missing/invalid."""
+    """Raised when the connector configuration is missing or unusable.
+
+    Covers a missing or invalid eb-config.json, its private key, and a session id
+    still holding the inert ``unconfigured`` placeholder.
+    """
 
 
 class InvalidDateRangeError(Exception):
@@ -255,21 +267,96 @@ def _select_balance(balances: Sequence[Balance]) -> Balance | None:
     return balances[0]
 
 
-def _check_session_usable(response: httpx.Response) -> None:
+def _provider_detail(response: httpx.Response) -> str:
+    """Return a compact, single-line excerpt of the provider's error detail.
+
+    Enable Banking answers with a structured JSON error body; whatever sits in
+    front of it (a proxy, a CDN) may answer with HTML instead. Either way the
+    excerpt is informational and ends up in a log line, so it must never raise,
+    never span multiple lines, and never grow past a bounded length.
+
+    Returns an empty string when the body carries nothing usable.
+    """
+    try:
+        body: object = response.json()
+    except ValueError:
+        body = None
+
+    text = ""
+    if isinstance(body, dict):
+        parts = [
+            str(body[key]).strip()
+            for key in ("error", "message", "detail", "error_description", "title")
+            if isinstance(body.get(key), (str, int, float)) and str(body[key]).strip()
+        ]
+        text = ": ".join(dict.fromkeys(parts))
+    if not text:
+        try:
+            text = response.text
+        except (UnicodeDecodeError, ValueError):
+            text = ""
+
+    collapsed = " ".join(text.split())
+    if len(collapsed) > _MAX_ERROR_DETAIL_CHARS:
+        return collapsed[:_MAX_ERROR_DETAIL_CHARS] + "..."
+    return collapsed
+
+
+def _detail_suffix(response: httpx.Response) -> str:
+    """Return the provider detail prefixed for a message, or an empty string."""
+    detail = _provider_detail(response)
+    return f" Provider detail: {detail}." if detail else ""
+
+
+def _is_unconfigured_session(session_id: str) -> bool:
+    """Return True when the session id is still the inert documented placeholder."""
+    return session_id.strip().lower() == _UNCONFIGURED_SESSION_ID
+
+
+def _describe_session_id(session_id: str) -> str:
+    """Describe the shape of a session id without revealing its value.
+
+    A 422 on the session lookup means the provider rejected the parameters, and
+    the session id is the parameter in question. These four facts are enough to
+    tell a truncated value, a stray newline, or an empty secret apart from a
+    genuinely stale consent, and none of them exposes the secret itself.
+    """
+    stripped = session_id.strip()
+    return (
+        "Session id shape: "
+        f"length={len(session_id)}, "
+        f"empty={not stripped}, "
+        f"surrounding-whitespace={session_id != stripped}, "
+        f"non-ascii={not session_id.isascii()}."
+    )
+
+
+def _check_session_usable(response: httpx.Response, *, context: str = "") -> None:
     """Raise ReauthorizationRequiredError if the PSD2 session is unusable.
 
     Triggers on HTTP 403, or on a 200 response whose body reports a session
-    ``status`` of ``"expired"``.
+    ``status`` of ``"expired"``. ``context`` is appended to the 422 message,
+    where the caller can describe which parameters the provider rejected.
     """
     if response.status_code == 403:
         raise ReauthorizationRequiredError(
             "Enable Banking rejected the PSD2 session (HTTP 403). Manual "
             "re-authorization via the bank's browser consent flow is required."
+            f"{_detail_suffix(response)}"
         )
     if response.status_code == 429:
         raise RateLimitExceededError(
             "Enable Banking PSD2 daily request limit exceeded (HTTP 429). Only 4 "
-            "requests per account per day are allowed by regulation."
+            f"requests per account per day are allowed by regulation.{_detail_suffix(response)}"
+        )
+    if response.status_code == 422:
+        note = f" {context}" if context else ""
+        raise EnableBankingAPIError(
+            "Enable Banking rejected the request parameters (HTTP 422)."
+            f"{_detail_suffix(response)}{note} A 422 is not a credentials problem: "
+            "the signature was accepted and the request understood, so a parameter "
+            "is wrong. If the session is stale, re-authorize the bank through its "
+            "browser consent flow (docs/credentials-setup.md, section 3)."
         )
     if response.status_code == 200:
         try:
@@ -280,10 +367,12 @@ def _check_session_usable(response: httpx.Response) -> None:
             raise ReauthorizationRequiredError(
                 "Enable Banking reports the PSD2 session as expired. Manual "
                 "re-authorization via the bank's browser consent flow is required."
+                f"{_detail_suffix(response)}"
             )
         return
     raise EnableBankingAPIError(
         f"Enable Banking returned an unexpected HTTP status: {response.status_code}."
+        f"{_detail_suffix(response)}"
     )
 
 
@@ -305,12 +394,18 @@ class EnableBankingConnector:
         self, credential: _SigningCredential, session_id: str, start_date: date, end_date: date
     ) -> str:
         """Look up the session's linked account, translating unusable-session errors."""
+        if _is_unconfigured_session(session_id):
+            raise ConnectorConfigError(
+                f"{self.BANK_NAME} has no PSD2 session configured: the secret still "
+                "holds the inert placeholder documented in docs/credentials-setup.md "
+                "section 6. Authorize the bank to read its data (section 3)."
+            )
         token = _build_jwt(credential)
         response = self._http_client.get(
             f"{_BASE_URL}/sessions/{session_id}", headers={"Authorization": f"Bearer {token}"}
         )
         try:
-            _check_session_usable(response)
+            _check_session_usable(response, context=_describe_session_id(session_id))
         except (
             ReauthorizationRequiredError,
             RateLimitExceededError,

@@ -510,3 +510,211 @@ def test_no_secrets_leak_into_logs_across_all_scenarios(
         token = header_value.removeprefix("Bearer ")
         assert token, "expected a JWT to have been sent on every request"
         assert token not in all_log_text
+
+
+# ---------------------------------------------------------------------------
+# Reportar el detalle del proveedor cuando la API falla
+# ---------------------------------------------------------------------------
+
+
+def _ok_handler(request: httpx.Request) -> httpx.Response:
+    """Answer the transactions endpoint so only the session lookup can fail."""
+    return httpx.Response(200, json={"transactions": [], "continuation_key": None})
+
+
+def _message_of(excinfo: pytest.ExceptionInfo[Exception]) -> str:
+    return str(excinfo.value)
+
+
+def test_http_403_includes_provider_detail(
+    caplog, eb_config_dir, fake_session_id_in_store, mock_http_client
+):
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            403, json={"error": "SESSION_REVOKED", "message": "Consent revoked by the bank"}
+        )
+
+    connector = _FakeConnector(http_client=mock_http_client(handler))
+    with caplog.at_level(logging.ERROR, logger="banking.connectors.enable_banking"):
+        with pytest.raises(ReauthorizationRequiredError) as excinfo:
+            connector.fetch_transactions(date(2026, 8, 1), date(2026, 8, 31))
+
+    message = _message_of(excinfo)
+    assert "SESSION_REVOKED" in message
+    assert "Consent revoked by the bank" in message
+
+
+def test_http_422_on_session_lookup_includes_detail_and_reauthorization_hint(
+    caplog, eb_config_dir, fake_session_id_in_store, mock_http_client
+):
+    session_response = httpx.Response(
+        422,
+        json={
+            "error": "SESSION_EXPIRED",
+            "message": "Consent expired on 2026-10-16",
+        },
+    )
+
+    connector = _FakeConnector(http_client=mock_http_client(_ok_handler, session_response))
+    with caplog.at_level(logging.ERROR, logger="banking.connectors.enable_banking"):
+        with pytest.raises(EnableBankingAPIError) as excinfo:
+            connector.fetch_transactions(date(2026, 8, 1), date(2026, 8, 31))
+
+    message = _message_of(excinfo)
+    assert "422" in message
+    assert "SESSION_EXPIRED" in message
+    assert "Consent expired on 2026-10-16" in message
+    assert "re-authoriz" in message
+    assert "credentials-setup" in message
+
+
+def test_error_detail_survives_a_non_json_body(
+    caplog, eb_config_dir, fake_session_id_in_store, mock_http_client
+):
+    session_response = httpx.Response(
+        502, text="<html><body>Bad Gateway\n  from edge</body></html>"
+    )
+
+    connector = _FakeConnector(http_client=mock_http_client(_ok_handler, session_response))
+    with caplog.at_level(logging.ERROR, logger="banking.connectors.enable_banking"):
+        with pytest.raises(EnableBankingAPIError) as excinfo:
+            connector.fetch_transactions(date(2026, 8, 1), date(2026, 8, 31))
+
+    message = _message_of(excinfo)
+    assert "Bad Gateway" in message
+    assert "\n" not in message
+
+
+def test_error_detail_is_truncated(
+    caplog, eb_config_dir, fake_session_id_in_store, mock_http_client
+):
+    session_response = httpx.Response(500, text="x" * 2000)
+
+    connector = _FakeConnector(http_client=mock_http_client(_ok_handler, session_response))
+    with caplog.at_level(logging.ERROR, logger="banking.connectors.enable_banking"):
+        with pytest.raises(EnableBankingAPIError) as excinfo:
+            connector.fetch_transactions(date(2026, 8, 1), date(2026, 8, 31))
+
+    message = _message_of(excinfo)
+    assert "x" * 301 not in message
+    assert "x" * 200 in message
+
+
+def test_empty_error_body_adds_no_detail_suffix(
+    caplog, eb_config_dir, fake_session_id_in_store, mock_http_client
+):
+    session_response = httpx.Response(500, content=b"")
+
+    connector = _FakeConnector(http_client=mock_http_client(_ok_handler, session_response))
+    with caplog.at_level(logging.ERROR, logger="banking.connectors.enable_banking"):
+        with pytest.raises(EnableBankingAPIError) as excinfo:
+            connector.fetch_transactions(date(2026, 8, 1), date(2026, 8, 31))
+
+    message = _message_of(excinfo)
+    assert "Provider detail" not in message
+    assert "unexpected HTTP status: 500" in message
+
+
+def test_422_describes_the_session_id_shape_without_revealing_it(
+    caplog,
+    eb_config_dir,
+    fake_session_id_in_store,
+    mock_http_client,
+    tmp_env_file: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setenv("BANKING_ENV_FILE", str(tmp_env_file))
+    # A trailing newline never reaches the request: httpx rejects control
+    # characters in a URL with InvalidURL. Spaces do reach it.
+    padded_session_id = " 6f1c2f5a-0f0e-4a4c-9d1f-2f5a0f0e4a4c "
+    SecretStore(tmp_env_file).set("FAKE_SESSION_ID", padded_session_id)
+    session_response = httpx.Response(
+        422, json={"error": "WRONG_REQUEST_PARAMETERS", "message": "Wrong request parameters"}
+    )
+
+    connector = _FakeConnector(http_client=mock_http_client(_ok_handler, session_response))
+    with caplog.at_level(logging.ERROR, logger="banking.connectors.enable_banking"):
+        with pytest.raises(EnableBankingAPIError) as excinfo:
+            connector.fetch_transactions(date(2026, 8, 1), date(2026, 8, 31))
+
+    message = _message_of(excinfo)
+    assert "Session id shape:" in message
+    assert "length=38" in message
+    assert "surrounding-whitespace=True" in message
+    assert "empty=False" in message
+    assert "6f1c2f5a" not in message
+    assert padded_session_id.strip() not in message
+
+
+def test_422_reports_a_clean_session_id_as_clean(
+    caplog, eb_config_dir, fake_session_id_in_store, mock_http_client
+):
+    session_response = httpx.Response(
+        422, json={"error": "WRONG_REQUEST_PARAMETERS", "message": "Wrong request parameters"}
+    )
+
+    connector = _FakeConnector(http_client=mock_http_client(_ok_handler, session_response))
+    with caplog.at_level(logging.ERROR, logger="banking.connectors.enable_banking"):
+        with pytest.raises(EnableBankingAPIError) as excinfo:
+            connector.fetch_transactions(date(2026, 8, 1), date(2026, 8, 31))
+
+    message = _message_of(excinfo)
+    assert f"length={len(fake_session_id_in_store)}" in message
+    assert "surrounding-whitespace=False" in message
+    assert fake_session_id_in_store not in message
+
+
+# ---------------------------------------------------------------------------
+# Reconocer el valor inerte de una sesión sin configurar
+# ---------------------------------------------------------------------------
+
+
+def test_unconfigured_session_fails_locally_without_calling_the_api(
+    eb_config_dir, fake_session_id_in_store, mock_http_client, tmp_env_file, monkeypatch
+):
+    monkeypatch.setenv("BANKING_ENV_FILE", str(tmp_env_file))
+    SecretStore(tmp_env_file).set("FAKE_SESSION_ID", "unconfigured")
+    calls = {"n": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls["n"] += 1
+        return httpx.Response(200, json={"transactions": [], "continuation_key": None})
+
+    connector = _FakeConnector(http_client=mock_http_client(handler))
+    with pytest.raises(ConnectorConfigError) as excinfo:
+        connector.fetch_transactions(date(2026, 8, 1), date(2026, 8, 31))
+
+    message = str(excinfo.value)
+    assert "no PSD2 session configured" in message
+    assert "placeholder" in message
+    assert "credentials-setup.md" in message
+    # The literal placeholder is the secret's own value: quoting it makes
+    # GitHub Actions mask it as *** in the run summary.
+    assert "unconfigured" not in message
+    assert calls["n"] == 0
+
+
+def test_unconfigured_placeholder_is_recognized_regardless_of_case_and_spaces(
+    eb_config_dir, fake_session_id_in_store, mock_http_client, tmp_env_file, monkeypatch
+):
+    monkeypatch.setenv("BANKING_ENV_FILE", str(tmp_env_file))
+    SecretStore(tmp_env_file).set("FAKE_SESSION_ID", "  Unconfigured ")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise AssertionError("no request should reach the API")
+
+    connector = _FakeConnector(http_client=mock_http_client(handler))
+    with pytest.raises(ConnectorConfigError):
+        connector.fetch_balance()
+
+
+def test_a_real_session_id_is_still_sent_to_the_api(
+    caplog, eb_config_dir, fake_session_id_in_store, mock_http_client
+):
+    # The fixture answers GET /sessions/{id}, so reaching the transactions
+    # endpoint at all proves the session lookup was not short-circuited.
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"transactions": [], "continuation_key": None})
+
+    connector = _FakeConnector(http_client=mock_http_client(handler))
+    assert connector.fetch_transactions(date(2026, 8, 1), date(2026, 8, 31)) == []

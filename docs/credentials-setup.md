@@ -319,6 +319,21 @@ Consecuencia esperada: cada ejecución termina en **fallo parcial** (exit `3`),
 el resumen muestra `ING: N movimientos` y tres líneas `FALLÓ — ...`, y llega un
 email agregado. Es el comportamiento correcto, no un error de configuración.
 
+Desde el 2026-11-01 el conector reconoce ese valor y falla **localmente**, sin
+llamar al proveedor ni gastar cuota PSD2. El resumen dice:
+
+```
+Banco Sabadell has no PSD2 session configured: the secret still holds the inert
+placeholder documented in docs/credentials-setup.md section 6. Authorize the
+bank to read its data (section 3).
+```
+
+El mensaje no repite el valor literal a propósito: es el contenido de un
+secreto, así que Actions lo enmascararía como `***` y taparía justo la parte
+informativa.
+
+en lugar de un `HTTP 422` que parecía un problema de credenciales.
+
 Cuando autorices un banco más, repite el § 3 cambiando `aspsp` y la clave
 (`ENABLE_BANKING_SESSION_ID_REVOLUT`, etc.). Al completar los cuatro, las
 ejecuciones pasan a `success` y dejan de enviar email.
@@ -409,3 +424,58 @@ API.
 `ReauthorizationRequiredError` (HTTP 403 o `status: "expired"`), ese banco cuenta
 como fallido, el resumen lo dice con su motivo y el email de IT6 llega en la
 misma ejecución. No hay que leer logs para enterarse.
+
+### 10.1 Cuando el proveedor responde 422
+
+Un `HTTP 422` no es un error de credenciales: la firma de la petición es válida
+y el proveedor entendió la llamada, pero rechaza procesarla. Aparece en la
+búsqueda de sesión (`GET /sessions/{id}`), y cuando falla ahí las dos consultas
+—movimientos y saldo— fallan con el mismo 422.
+
+El 2026-11-01, ya con el detalle visible, MyInvestor y Sabadell devolvieron lo
+mismo:
+
+```
+WRONG_REQUEST_PARAMETERS: Wrong request parameters
+```
+
+Ese 422 no era un consentimiento vencido: los dos secretos seguían con el valor
+inerte `unconfigured` de § 6, que tiene 12 caracteres y no es un session id. El
+conector lo detecta ahora antes de llamar al proveedor, así que ese caso no
+vuelve a llegar hasta acá. Lo que sigue vale para una sesión real que el banco
+rechaza.
+La lectura más directa: el proveedor no acepta el `session_id` que le mandamos,
+que es el único parámetro de esa llamada. Para distinguir un secreto mal cargado
+de un consentimiento que el banco ya no reconoce, el mensaje incluye la forma
+del valor, nunca el valor:
+
+```
+Session id shape: length=36, empty=False, surrounding-whitespace=False, non-ascii=False
+```
+
+| Lo que ves | Lo que significa |
+|---|---|
+| `empty=True` | El secreto no está cargado; revisar `gh secret list` |
+| `surrounding-whitespace=True` | Se colaron espacios al copiar; `gh secret set` los guarda tal cual |
+| `length` fuera de lo esperado | Valor truncado, o de otro banco |
+| Todo en orden y aun así 422 | El banco no reconoce ese `session_id`; renovar § 3 |
+
+Un salto de línea en el secreto **no** produce 422: httpx lo rechaza antes de
+enviar la petición (`InvalidURL`), así que ese caso se ve como una excepción del
+cliente, no como una respuesta del proveedor.
+
+El mensaje completo, con el cuerpo que devuelve el proveedor, se ve así (en
+Actions va en una sola línea; acá se parte para leerlo):
+
+```
+Enable Banking rejected the request parameters (HTTP 422). Provider detail:
+WRONG_REQUEST_PARAMETERS: Wrong request parameters. Session id shape: length=36,
+empty=False, surrounding-whitespace=False, non-ascii=False. A 422 is not a credentials
+problem: the signature was accepted and the request understood, so a parameter is
+wrong. If the session is stale, re-authorize the bank through its browser consent
+flow (docs/credentials-setup.md, section 3).
+```
+
+El extracto del cuerpo se colapsa a una línea y se corta a 300 caracteres porque
+termina en el log de Actions. Si el cuerpo no trae nada legible (por ejemplo, un
+HTML de un proxy en el medio), el mensaje directamente lo omite.
