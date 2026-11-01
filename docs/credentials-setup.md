@@ -319,6 +319,17 @@ Consecuencia esperada: cada ejecución termina en **fallo parcial** (exit `3`),
 el resumen muestra `ING: N movimientos` y tres líneas `FALLÓ — ...`, y llega un
 email agregado. Es el comportamiento correcto, no un error de configuración.
 
+Desde el 2026-11-01 el conector reconoce ese valor y falla **localmente**, sin
+llamar al proveedor ni gastar cuota PSD2. El resumen dice:
+
+```
+Banco Sabadell has no PSD2 session configured: the secret still holds the inert
+`unconfigured` placeholder. Authorize the bank to read its data
+(docs/credentials-setup.md, section 3).
+```
+
+en lugar de un `HTTP 422` que parecía un problema de credenciales.
+
 Cuando autorices un banco más, repite el § 3 cambiando `aspsp` y la clave
 (`ENABLE_BANKING_SESSION_ID_REVOLUT`, etc.). Al completar los cuatro, las
 ejecuciones pasan a `success` y dejan de enviar email.
@@ -424,6 +435,11 @@ mismo:
 WRONG_REQUEST_PARAMETERS: Wrong request parameters
 ```
 
+Ese 422 no era un consentimiento vencido: los dos secretos seguían con el valor
+inerte `unconfigured` de § 6, que tiene 12 caracteres y no es un session id. El
+conector lo detecta ahora antes de llamar al proveedor, así que ese caso no
+vuelve a llegar hasta acá. Lo que sigue vale para una sesión real que el banco
+rechaza.
 La lectura más directa: el proveedor no acepta el `session_id` que le mandamos,
 que es el único parámetro de esa llamada. Para distinguir un secreto mal cargado
 de un consentimiento que el banco ya no reconoce, el mensaje incluye la forma

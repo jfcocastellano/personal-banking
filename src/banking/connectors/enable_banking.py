@@ -44,9 +44,18 @@ _BALANCE_PREFERENCE: tuple[str, ...] = (
 
 _MAX_ERROR_DETAIL_CHARS = 300
 
+#: Inert value documented in docs/credentials-setup.md section 6 for a bank whose
+#: PSD2 consent does not exist yet. It keeps the workflow's secret check satisfied;
+#: it is not a session id and must never be sent to the provider.
+_UNCONFIGURED_SESSION_ID = "unconfigured"
+
 
 class ConnectorConfigError(Exception):
-    """Raised when eb-config.json or its referenced private key are missing/invalid."""
+    """Raised when the connector configuration is missing or unusable.
+
+    Covers a missing or invalid eb-config.json, its private key, and a session id
+    still holding the inert ``unconfigured`` placeholder.
+    """
 
 
 class InvalidDateRangeError(Exception):
@@ -299,6 +308,11 @@ def _detail_suffix(response: httpx.Response) -> str:
     return f" Provider detail: {detail}." if detail else ""
 
 
+def _is_unconfigured_session(session_id: str) -> bool:
+    """Return True when the session id is still the inert documented placeholder."""
+    return session_id.strip().lower() == _UNCONFIGURED_SESSION_ID
+
+
 def _describe_session_id(session_id: str) -> str:
     """Describe the shape of a session id without revealing its value.
 
@@ -380,6 +394,12 @@ class EnableBankingConnector:
         self, credential: _SigningCredential, session_id: str, start_date: date, end_date: date
     ) -> str:
         """Look up the session's linked account, translating unusable-session errors."""
+        if _is_unconfigured_session(session_id):
+            raise ConnectorConfigError(
+                f"{self.BANK_NAME} has no PSD2 session configured: the secret still "
+                "holds the inert `unconfigured` placeholder. Authorize the bank to "
+                "read its data (docs/credentials-setup.md, section 3)."
+            )
         token = _build_jwt(credential)
         response = self._http_client.get(
             f"{_BASE_URL}/sessions/{session_id}", headers={"Authorization": f"Bearer {token}"}

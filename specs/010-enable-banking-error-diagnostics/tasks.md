@@ -79,12 +79,27 @@ reconoce.
 **Aceptación**: hay tests de una sesión con espacios alrededor y de una limpia;
 ninguno de los dos mensajes contiene el valor del secreto.
 
+### T006 — Reconocer el valor inerte `unconfigured`
+
+**Hallazgo del diagnóstico**: el 422 no era un consentimiento vencido ni un
+secreto mal cargado. Los dos secretos seguían con el centinela documentado en
+§ 6 — 12 caracteres, el mismo largo en ambos bancos — y el conector lo mandaba
+al proveedor como si fuera una sesión.
+
+Ahora `_is_unconfigured_session()` lo detecta antes de la primera llamada y
+levanta `ConnectorConfigError` con la acción concreta. Efectos: no se gasta
+cuota PSD2 (4 requests por cuenta por día), el resumen nombra la causa real, y
+el tipo de excepción pasa a ser el que describe el problema.
+
+**Aceptación**: tests de que no sale ninguna petición HTTP, de que el centinela
+se reconoce con mayúsculas y espacios, y de que una sesión real sigue viajando.
+
 ## Evidencia
 
 - Commit `45cbcd0` — cuerpo del proveedor en las cuatro ramas de error + rama
   propia para 422.
 - Commit siguiente — corrección de redacción, `_describe_session_id` y runbook.
-- `266 passed`, `ruff check`, `ruff format --check`, `mypy src` limpios.
+- `269 passed`, `ruff check`, `ruff format --check`, `mypy src` limpios.
 - Corrida real del sync sobre la rama (`41299786210`), que por primera vez
   informó la causa:
 
@@ -95,10 +110,10 @@ ninguno de los dos mensajes contiene el valor del secreto.
 
 ### T004 — Leer el detalle real de MyInvestor
 
-**Hecho.** El detalle apareció: el proveedor rechaza los parámetros, no la
-sesión. Qué sigue queda fuera de esta unidad: hay que verificar si el
-`session_id` guardado corresponde a la aplicación actual de Enable Banking, y
-sólo entonces decidir si la salida es renovar el consentimiento.
+**Hecho**, y el resultado desarmó la premisa de la unidad: el proveedor
+rechazaba los parámetros porque los parámetros eran `unconfigured`. MyInvestor y
+Sabadell nunca tuvieron sesión; el sync parcial que se veía como incidente es el
+estado documentado en § 6. Ver T006.
 
 ## Seguimiento detectado
 

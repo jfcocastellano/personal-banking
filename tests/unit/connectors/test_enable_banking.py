@@ -662,3 +662,55 @@ def test_422_reports_a_clean_session_id_as_clean(
     assert f"length={len(fake_session_id_in_store)}" in message
     assert "surrounding-whitespace=False" in message
     assert fake_session_id_in_store not in message
+
+
+# ---------------------------------------------------------------------------
+# Reconocer el valor inerte de una sesión sin configurar
+# ---------------------------------------------------------------------------
+
+
+def test_unconfigured_session_fails_locally_without_calling_the_api(
+    eb_config_dir, fake_session_id_in_store, mock_http_client, tmp_env_file, monkeypatch
+):
+    monkeypatch.setenv("BANKING_ENV_FILE", str(tmp_env_file))
+    SecretStore(tmp_env_file).set("FAKE_SESSION_ID", "unconfigured")
+    calls = {"n": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls["n"] += 1
+        return httpx.Response(200, json={"transactions": [], "continuation_key": None})
+
+    connector = _FakeConnector(http_client=mock_http_client(handler))
+    with pytest.raises(ConnectorConfigError) as excinfo:
+        connector.fetch_transactions(date(2026, 8, 1), date(2026, 8, 31))
+
+    message = str(excinfo.value)
+    assert "unconfigured" in message
+    assert "credentials-setup" in message
+    assert calls["n"] == 0
+
+
+def test_unconfigured_placeholder_is_recognized_regardless_of_case_and_spaces(
+    eb_config_dir, fake_session_id_in_store, mock_http_client, tmp_env_file, monkeypatch
+):
+    monkeypatch.setenv("BANKING_ENV_FILE", str(tmp_env_file))
+    SecretStore(tmp_env_file).set("FAKE_SESSION_ID", "  Unconfigured ")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise AssertionError("no request should reach the API")
+
+    connector = _FakeConnector(http_client=mock_http_client(handler))
+    with pytest.raises(ConnectorConfigError):
+        connector.fetch_balance()
+
+
+def test_a_real_session_id_is_still_sent_to_the_api(
+    caplog, eb_config_dir, fake_session_id_in_store, mock_http_client
+):
+    # The fixture answers GET /sessions/{id}, so reaching the transactions
+    # endpoint at all proves the session lookup was not short-circuited.
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"transactions": [], "continuation_key": None})
+
+    connector = _FakeConnector(http_client=mock_http_client(handler))
+    assert connector.fetch_transactions(date(2026, 8, 1), date(2026, 8, 31)) == []
