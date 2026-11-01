@@ -19,6 +19,8 @@ siendo tuyo, y los límites que no se pueden sortear.
 
 ## 1. Generar el tab del mes
 
+En local, con `BANKING_MASTER_KEY` exportada y los secretos ya provisionados:
+
 ```bash
 # Mes en curso
 .venv/bin/python -m banking layout
@@ -28,6 +30,11 @@ siendo tuyo, y los límites que no se pueden sortear.
 ```
 
 `--month` acepta exactamente `YYYY-MM`. Cualquier otra cosa sale con código 2 sin escribir nada.
+
+**Sin clave en la máquina**, que es el caso normal: el mismo comando corre en GitHub Actions, donde ya
+están los secretos. `Actions → Layout mensual → Run workflow`, dejando `month` vacío para el mes en
+curso. El resumen de la ejecución trae una línea por banco y el significado del código de salida; no
+hay ninguna lógica de negocio en el workflow, es el mismo `python -m banking layout`.
 
 ---
 
