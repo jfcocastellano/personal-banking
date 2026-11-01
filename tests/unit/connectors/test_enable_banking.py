@@ -510,3 +510,106 @@ def test_no_secrets_leak_into_logs_across_all_scenarios(
         token = header_value.removeprefix("Bearer ")
         assert token, "expected a JWT to have been sent on every request"
         assert token not in all_log_text
+
+
+# ---------------------------------------------------------------------------
+# Reportar el detalle del proveedor cuando la API falla
+# ---------------------------------------------------------------------------
+
+
+def _ok_handler(request: httpx.Request) -> httpx.Response:
+    """Answer the transactions endpoint so only the session lookup can fail."""
+    return httpx.Response(200, json={"transactions": [], "continuation_key": None})
+
+
+def _message_of(excinfo: pytest.ExceptionInfo[Exception]) -> str:
+    return str(excinfo.value)
+
+
+def test_http_403_includes_provider_detail(
+    caplog, eb_config_dir, fake_session_id_in_store, mock_http_client
+):
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            403, json={"error": "SESSION_REVOKED", "message": "Consent revoked by the bank"}
+        )
+
+    connector = _FakeConnector(http_client=mock_http_client(handler))
+    with caplog.at_level(logging.ERROR, logger="banking.connectors.enable_banking"):
+        with pytest.raises(ReauthorizationRequiredError) as excinfo:
+            connector.fetch_transactions(date(2026, 8, 1), date(2026, 8, 31))
+
+    message = _message_of(excinfo)
+    assert "SESSION_REVOKED" in message
+    assert "Consent revoked by the bank" in message
+
+
+def test_http_422_on_session_lookup_includes_detail_and_reauthorization_hint(
+    caplog, eb_config_dir, fake_session_id_in_store, mock_http_client
+):
+    session_response = httpx.Response(
+        422,
+        json={
+            "error": "SESSION_EXPIRED",
+            "message": "Consent expired on 2026-10-16",
+        },
+    )
+
+    connector = _FakeConnector(http_client=mock_http_client(_ok_handler, session_response))
+    with caplog.at_level(logging.ERROR, logger="banking.connectors.enable_banking"):
+        with pytest.raises(EnableBankingAPIError) as excinfo:
+            connector.fetch_transactions(date(2026, 8, 1), date(2026, 8, 31))
+
+    message = _message_of(excinfo)
+    assert "422" in message
+    assert "SESSION_EXPIRED" in message
+    assert "Consent expired on 2026-10-16" in message
+    assert "re-authoriz" in message
+    assert "credentials-setup" in message
+
+
+def test_error_detail_survives_a_non_json_body(
+    caplog, eb_config_dir, fake_session_id_in_store, mock_http_client
+):
+    session_response = httpx.Response(
+        502, text="<html><body>Bad Gateway\n  from edge</body></html>"
+    )
+
+    connector = _FakeConnector(http_client=mock_http_client(_ok_handler, session_response))
+    with caplog.at_level(logging.ERROR, logger="banking.connectors.enable_banking"):
+        with pytest.raises(EnableBankingAPIError) as excinfo:
+            connector.fetch_transactions(date(2026, 8, 1), date(2026, 8, 31))
+
+    message = _message_of(excinfo)
+    assert "Bad Gateway" in message
+    assert "\n" not in message
+
+
+def test_error_detail_is_truncated(
+    caplog, eb_config_dir, fake_session_id_in_store, mock_http_client
+):
+    session_response = httpx.Response(500, text="x" * 2000)
+
+    connector = _FakeConnector(http_client=mock_http_client(_ok_handler, session_response))
+    with caplog.at_level(logging.ERROR, logger="banking.connectors.enable_banking"):
+        with pytest.raises(EnableBankingAPIError) as excinfo:
+            connector.fetch_transactions(date(2026, 8, 1), date(2026, 8, 31))
+
+    message = _message_of(excinfo)
+    assert "x" * 301 not in message
+    assert "x" * 200 in message
+
+
+def test_empty_error_body_adds_no_detail_suffix(
+    caplog, eb_config_dir, fake_session_id_in_store, mock_http_client
+):
+    session_response = httpx.Response(500, content=b"")
+
+    connector = _FakeConnector(http_client=mock_http_client(_ok_handler, session_response))
+    with caplog.at_level(logging.ERROR, logger="banking.connectors.enable_banking"):
+        with pytest.raises(EnableBankingAPIError) as excinfo:
+            connector.fetch_transactions(date(2026, 8, 1), date(2026, 8, 31))
+
+    message = _message_of(excinfo)
+    assert "Provider detail" not in message
+    assert "unexpected HTTP status: 500" in message

@@ -42,6 +42,9 @@ _BALANCE_PREFERENCE: tuple[str, ...] = (
 )
 
 
+_MAX_ERROR_DETAIL_CHARS = 300
+
+
 class ConnectorConfigError(Exception):
     """Raised when eb-config.json or its referenced private key are missing/invalid."""
 
@@ -255,6 +258,47 @@ def _select_balance(balances: Sequence[Balance]) -> Balance | None:
     return balances[0]
 
 
+def _provider_detail(response: httpx.Response) -> str:
+    """Return a compact, single-line excerpt of the provider's error detail.
+
+    Enable Banking answers with a structured JSON error body; whatever sits in
+    front of it (a proxy, a CDN) may answer with HTML instead. Either way the
+    excerpt is informational and ends up in a log line, so it must never raise,
+    never span multiple lines, and never grow past a bounded length.
+
+    Returns an empty string when the body carries nothing usable.
+    """
+    try:
+        body: object = response.json()
+    except ValueError:
+        body = None
+
+    text = ""
+    if isinstance(body, dict):
+        parts = [
+            str(body[key]).strip()
+            for key in ("error", "message", "detail", "error_description", "title")
+            if isinstance(body.get(key), (str, int, float)) and str(body[key]).strip()
+        ]
+        text = ": ".join(dict.fromkeys(parts))
+    if not text:
+        try:
+            text = response.text
+        except (UnicodeDecodeError, ValueError):
+            text = ""
+
+    collapsed = " ".join(text.split())
+    if len(collapsed) > _MAX_ERROR_DETAIL_CHARS:
+        return collapsed[:_MAX_ERROR_DETAIL_CHARS] + "..."
+    return collapsed
+
+
+def _detail_suffix(response: httpx.Response) -> str:
+    """Return the provider detail prefixed for a message, or an empty string."""
+    detail = _provider_detail(response)
+    return f" Provider detail: {detail}." if detail else ""
+
+
 def _check_session_usable(response: httpx.Response) -> None:
     """Raise ReauthorizationRequiredError if the PSD2 session is unusable.
 
@@ -265,11 +309,20 @@ def _check_session_usable(response: httpx.Response) -> None:
         raise ReauthorizationRequiredError(
             "Enable Banking rejected the PSD2 session (HTTP 403). Manual "
             "re-authorization via the bank's browser consent flow is required."
+            f"{_detail_suffix(response)}"
         )
     if response.status_code == 429:
         raise RateLimitExceededError(
             "Enable Banking PSD2 daily request limit exceeded (HTTP 429). Only 4 "
-            "requests per account per day are allowed by regulation."
+            f"requests per account per day are allowed by regulation.{_detail_suffix(response)}"
+        )
+    if response.status_code == 422:
+        raise EnableBankingAPIError(
+            "Enable Banking rejected the request as unprocessable (HTTP 422)."
+            f"{_detail_suffix(response)} A 422 on the session lookup usually means "
+            "the PSD2 consent is expired, revoked, or was granted to a different "
+            "application: re-authorize the bank through its browser consent flow "
+            "(docs/credentials-setup.md, section 3)."
         )
     if response.status_code == 200:
         try:
@@ -280,10 +333,12 @@ def _check_session_usable(response: httpx.Response) -> None:
             raise ReauthorizationRequiredError(
                 "Enable Banking reports the PSD2 session as expired. Manual "
                 "re-authorization via the bank's browser consent flow is required."
+                f"{_detail_suffix(response)}"
             )
         return
     raise EnableBankingAPIError(
         f"Enable Banking returned an unexpected HTTP status: {response.status_code}."
+        f"{_detail_suffix(response)}"
     )
 
 

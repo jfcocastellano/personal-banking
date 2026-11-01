@@ -409,3 +409,32 @@ API.
 `ReauthorizationRequiredError` (HTTP 403 o `status: "expired"`), ese banco cuenta
 como fallido, el resumen lo dice con su motivo y el email de IT6 llega en la
 misma ejecución. No hay que leer logs para enterarse.
+
+### 10.1 Cuando el proveedor responde 422
+
+Un `HTTP 422` no es un error de credenciales: la firma de la petición es válida
+y el proveedor entendió la llamada, pero rechaza procesarla. En la práctica
+aparece en la búsqueda de sesión (`GET /sessions/{id}`), y entonces esa sesión no
+sirve para ninguna de las dos consultas — movimientos y saldo fallan con el
+mismo 422.
+
+Significa, casi siempre, que el consentimiento del banco venció, fue revocado, o
+se otorgó con otra aplicación de Enable Banking. La acción es la misma que en
+una sesión caducada: repetir § 3 para ese banco.
+
+Desde el 2026-11-01 el mensaje incluye el cuerpo que devuelve el proveedor:
+
+```
+Enable Banking rejected the request as unprocessable (HTTP 422). Provider detail:
+SESSION_EXPIRED: Consent expired on 2026-10-16. A 422 on the session lookup
+usually means the PSD2 consent is expired, revoked, or was granted to a
+different application: re-authorize the bank through its browser consent flow
+(docs/credentials-setup.md, section 3).
+```
+
+En el log de Actions se ve en una sola línea; acá se parte para leerlo.
+
+Ese extracto se colapsa a una línea y se corta a 300 caracteres porque viaja al
+log de Actions. Si el cuerpo no trae nada legible (por ejemplo, un HTML de un
+proxy), el mensaje simplemente omite el detalle. Si un 422 apareciera en el
+endpoint de movimientos con una causa distinta, ese texto es lo que lo revela.
