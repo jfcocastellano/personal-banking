@@ -114,9 +114,39 @@ Viajes
 | `.venv/bin/mypy src` | `Success: no issues found in 20 source files` |
 | `python -m banking layout --month 2026-13` | exit `2`, working tree unchanged |
 
-Recorded by: `gentle-ai-verify`, read-only. Manual confirmation against the real
-document is still pending (it mutates the user's spreadsheet) and stays T007's
-remaining item.
+Recorded by: `gentle-ai-verify`, read-only.
+
+### Manual confirmation against the real document (2026-11-01)
+
+The layout had to run where its credentials live, so it ran as the
+`workflow_dispatch` job `layout.yml`, which calls the same
+`python -m banking layout`. Tab used: **`2026-10 Gastos`**.
+
+| Check | Result |
+| --- | --- |
+| Run `41297912894`, `-f month=2026-10` | `Layout completado: 85 movimientos y 4 saldos ... (11.57s)` |
+| Three blocks present | Confirmed by the owner of the document |
+| Left block `B:E` holds the movements | 85 rows (ING 71 + Revolut 14) |
+| Center block `G:H` | 49 catalogue labels; `H4:H52` empty by decision, `H53` holds `=SUM(H4:H52)` and evaluates |
+| Right block `J:K` | Summary plus four balance rows (ING 2803.40 EUR, Revolut 11.22 EUR, MyInvestor and Sabadell without a reading) |
+| Hand-typed amounts survive a rerun | Hand-typed values written into `H`, then run `41309309033` on `main` rewrote the tab; every value and the `H53` total were intact afterwards |
+
+Two facts from these runs that the unit suite cannot establish:
+
+- The tab already existed on the second run, so it took the **update** path: only
+  `B4:E403` was cleared and rewritten. Title merges and the rest of the center
+  block apply on creation only, which is why hand-typed values survive.
+- `H53` evaluating to a real number is the cheap proof that the creation path
+  wrote with `USER_ENTERED`; a blank or literal formula there would mean the
+  formula never evaluated.
+
+Decision recorded with the confirmation: the `G:H` block stays **manual**. No
+prefill from the reference workbook and no column widths, for now.
+
+Not established by this confirmation: MyInvestor and Banco Sabadell contribute
+nothing, because their secrets still hold the inert placeholder (see
+`docs/credentials-setup.md` § 6). The four balance rows include those two banks
+without a reading, so "4 saldos" counts rows, not successful reads.
 
 ## Follow-ups from review
 
