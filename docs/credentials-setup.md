@@ -261,6 +261,48 @@ Mientras siga así, `ENABLE_BANKING_SESSION_ID_SABADELL` se queda en
 `unconfigured` (§ 6) y las ejecuciones terminan en fallo parcial, que es el
 comportamiento correcto.
 
+**3.6 — Particularidades: MyInvestor (roto del lado de Inversis)**
+
+**Estado: bloqueado (verificado el 2026-11-01).** MyInvestor no tiene login PSD2
+propio: su área de cliente corre sobre la plataforma de **Inversis**, y ese login
+está roto. No hay parámetro nuestro que lo evite.
+
+ASPSP a usar: `{"name": "MyInvestor Banco", "country": "ES"}` (BIC `BACAESMM`,
+solo `psu_type` personal). Enable Banking lo publica con **`beta: true`**, igual
+que al ASPSP `Banco Inversis` (`INVLESMMXXX`): son integraciones que el proveedor
+todavía no da por maduras.
+
+Síntoma exacto, en cuatro pasos:
+
+1. La URL de consentimiento redirige a
+   `https://www.inversis.com/trans/inversis/loginOauth?token=…&codigo=…`.
+2. Esa página carga una pantalla de login con el usuario ya puesto y el botón
+   `ENTRAR`. Al enviarlo, su propio JavaScript hace
+   `POST https://api.inversis.com/inversis/authorize`, que responde `302 Found`.
+3. El navegador sigue el `302` a `loginOauth.html`, y ese recurso devuelve `404`.
+   La respuesta tampoco trae `Access-Control-Allow-Origin`, así que el XHR queda
+   bloqueado por CORS.
+4. La pantalla muestra `Se ha producido un error`, sin más detalle.
+
+Lo mismo ocurre con el ASPSP `Banco Inversis`, así que **las dos puertas a
+MyInvestor fallan en el mismo front-end**, antes de llegar al consentimiento. Los
+`authorization_id` de las dos pruebas fueron `27f2fcb9-50ea-4704-9e6a-fad2c099a66f`
+(MyInvestor Banco) y `9df80f9e-550a-4387-a97c-c8d26779bb90` (Banco Inversis),
+ambos del 2026-11-01.
+
+Por eso `ENABLE_BANKING_SESSION_ID_MYINVESTOR` se queda en `unconfigured` (§ 6),
+igual que Sabadell: no es una sesión vencida ni un error de credenciales.
+
+Detalle de diagnóstico que vale tener a mano: Enable Banking **no expone el
+estado de una autorización** (`GET /auth/{id}` devuelve `404`), así que la única
+señal de estas pruebas es el navegador. Por eso los cuatro pasos de arriba están
+anotados: son la evidencia que el proveedor pide y que no se puede reconstruir
+después.
+
+Qué destrabaría esto: que Enable Banking o Inversis arreglen el front-end de
+login. Es su bug y no requiere cambios acá; tampoco hay escalada posible del lado
+del titular, porque el consentimiento nunca llega a emitirse.
+
 ---
 
 ## 4. Google Sheets
@@ -305,9 +347,9 @@ python -m banking secrets set NOTIFY_EMAIL_TO <destinatario@dominio>
 
 El código instancia siempre los cuatro conectores y el workflow exige que los 14
 secretos existan, así que hasta que autorices cada banco hay que darle un valor
-inerte para que el arranque no se bloquee. Sabadell también va acá por ahora:
-existe en Enable Banking, pero su consentimiento está bloqueado del lado del
-proveedor (§ 3.5).
+inerte para que el arranque no se bloquee. Sabadell va acá por ahora: existe en
+Enable Banking, pero su consentimiento está bloqueado del lado del proveedor
+(§ 3.5). MyInvestor también, por un bug del login de Inversis (§ 3.6).
 
 ```bash
 for bank in REVOLUT MYINVESTOR SABADELL; do
