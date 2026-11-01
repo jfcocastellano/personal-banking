@@ -324,9 +324,13 @@ llamar al proveedor ni gastar cuota PSD2. El resumen dice:
 
 ```
 Banco Sabadell has no PSD2 session configured: the secret still holds the inert
-`unconfigured` placeholder. Authorize the bank to read its data
-(docs/credentials-setup.md, section 3).
+placeholder documented in docs/credentials-setup.md section 6. Authorize the
+bank to read its data (section 3).
 ```
+
+El mensaje no repite el valor literal a propósito: es el contenido de un
+secreto, así que Actions lo enmascararía como `***` y taparía justo la parte
+informativa.
 
 en lugar de un `HTTP 422` que parecía un problema de credenciales.
 

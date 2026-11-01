@@ -397,8 +397,8 @@ class EnableBankingConnector:
         if _is_unconfigured_session(session_id):
             raise ConnectorConfigError(
                 f"{self.BANK_NAME} has no PSD2 session configured: the secret still "
-                "holds the inert `unconfigured` placeholder. Authorize the bank to "
-                "read its data (docs/credentials-setup.md, section 3)."
+                "holds the inert placeholder documented in docs/credentials-setup.md "
+                "section 6. Authorize the bank to read its data (section 3)."
             )
         token = _build_jwt(credential)
         response = self._http_client.get(

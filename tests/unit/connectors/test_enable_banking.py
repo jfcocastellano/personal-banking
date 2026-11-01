@@ -685,8 +685,12 @@ def test_unconfigured_session_fails_locally_without_calling_the_api(
         connector.fetch_transactions(date(2026, 8, 1), date(2026, 8, 31))
 
     message = str(excinfo.value)
-    assert "unconfigured" in message
-    assert "credentials-setup" in message
+    assert "no PSD2 session configured" in message
+    assert "placeholder" in message
+    assert "credentials-setup.md" in message
+    # The literal placeholder is the secret's own value: quoting it makes
+    # GitHub Actions mask it as *** in the run summary.
+    assert "unconfigured" not in message
     assert calls["n"] == 0
 
 
