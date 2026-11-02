@@ -181,7 +181,7 @@ def test_handle_partial_failure_maps_delivery_status_to_exit_code(
 
 def _total_failure_exception() -> AllBanksFailedError:
     return AllBanksFailedError(
-        "All four banks failed: ING España: ing boom; Revolut: revolut boom; "
+        "All 4 banks failed: ING España: ing boom; Revolut: revolut boom; "
         "MyInvestor: myinvestor boom; Banco Sabadell: sabadell boom",
         outcomes=[
             BankOutcome("ING España", False, None, "ing boom"),
@@ -350,3 +350,145 @@ def test_handle_full_success_does_not_even_build_a_notifier(
     exit_code = cli_sync.handle(argparse.Namespace())
 
     assert exit_code == 0
+
+
+# --- Bancos sin sesión PSD2: un parcial esperado no es un fallo -------------
+
+_NOT_ONBOARDED_REASON = "has no PSD2 session configured: authorize the bank (section 3)"
+
+
+def _not_onboarded_summary() -> SyncSummary:
+    """Two banks OK, two without a PSD2 session: the normal quiet run."""
+    outcomes = [
+        BankOutcome("ING España", True, 3, None),
+        BankOutcome("Revolut", True, 2, None),
+        BankOutcome("MyInvestor", False, None, _NOT_ONBOARDED_REASON, not_onboarded=True),
+        BankOutcome("Banco Sabadell", False, None, _NOT_ONBOARDED_REASON, not_onboarded=True),
+    ]
+    return _summary(OverallStatus.FULL_SUCCESS, outcomes)
+
+
+def test_handle_not_onboarded_only_exits_zero_and_never_notifies(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    mocker: MockerFixture,
+) -> None:
+    monkeypatch.setattr(cli_sync, "run_sync", lambda: _not_onboarded_summary())
+    notifier = mocker.Mock(spec=EmailNotifier)
+
+    exit_code = cli_sync.handle(argparse.Namespace(), notifier=notifier)
+
+    assert exit_code == 0
+    notifier.notify_failure.assert_not_called()
+    captured = capsys.readouterr()
+    assert captured.err == ""
+    assert "FALLÓ" not in captured.out
+    assert captured.out.count("SIN SESIÓN PSD2") >= 2
+    assert "Bancos sin sesión PSD2" in captured.out
+    for name in ("MyInvestor", "Banco Sabadell"):
+        assert name in captured.out
+
+
+def test_handle_not_onboarded_only_does_not_even_build_a_notifier(
+    monkeypatch: pytest.MonkeyPatch, mocker: MockerFixture
+) -> None:
+    """No email, so no SMTP configuration is read either."""
+    summary = _not_onboarded_summary()
+    monkeypatch.setattr(cli_sync, "run_sync", lambda: summary)
+    exploding = mocker.patch.object(cli_sync, "EmailNotifier", autospec=True)
+    exploding.side_effect = AssertionError("EmailNotifier must not be built")
+
+    exit_code = cli_sync.handle(argparse.Namespace())
+
+    assert exit_code == 0
+
+
+def test_handle_one_real_failure_alongside_not_onboarded_exits_three_and_notifies(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    mocker: MockerFixture,
+) -> None:
+    """A real failure stays loud even when other banks simply have no session."""
+    outcomes = [
+        BankOutcome("ING España", True, 3, None),
+        BankOutcome("Revolut", False, None, "re-auth needed"),
+        BankOutcome("MyInvestor", False, None, _NOT_ONBOARDED_REASON, not_onboarded=True),
+        BankOutcome("Banco Sabadell", True, 1, None),
+    ]
+    summary = _summary(OverallStatus.PARTIAL_FAILURE, outcomes)
+    monkeypatch.setattr(cli_sync, "run_sync", lambda: summary)
+    notifier = mocker.Mock(spec=EmailNotifier)
+    notifier.notify_failure.return_value = DeliveryStatus.SENT
+
+    exit_code = cli_sync.handle(argparse.Namespace(), notifier=notifier)
+
+    assert exit_code == 3
+    notifier.notify_failure.assert_called_once()
+    captured = capsys.readouterr()
+    assert "Revolut: FALLÓ — re-auth needed" in captured.out
+    assert "MyInvestor: SIN SESIÓN PSD2" in captured.out
+    assert "Bancos sin sesión PSD2 (no cuentan como fallo): MyInvestor" in captured.out
+
+
+def test_handle_total_failure_does_not_claim_every_bank_failed(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    mocker: MockerFixture,
+) -> None:
+    """Two banks without a session must not be reported as failures."""
+    exc = AllBanksFailedError(
+        "Only failed banks: MyInvestor: myinvestor boom; Banco Sabadell: sabadell boom. "
+        "Not onboarded (no PSD2 session yet, not a failure): ING España, Revolut",
+        outcomes=[
+            BankOutcome("ING España", False, None, _NOT_ONBOARDED_REASON, not_onboarded=True),
+            BankOutcome("Revolut", False, None, _NOT_ONBOARDED_REASON, not_onboarded=True),
+            BankOutcome("MyInvestor", False, None, "myinvestor boom"),
+            BankOutcome("Banco Sabadell", False, None, "sabadell boom"),
+        ],
+        tab_name="2026-08",
+    )
+
+    def _raise() -> None:
+        raise exc
+
+    monkeypatch.setattr(cli_sync, "run_sync", _raise)
+    notifier = mocker.Mock(spec=EmailNotifier)
+    notifier.notify_failure.return_value = DeliveryStatus.SENT
+
+    exit_code = cli_sync.handle(argparse.Namespace(), notifier=notifier)
+
+    assert exit_code == 1
+    notifier.notify_failure.assert_called_once()
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "los 4 bancos fallaron" not in captured.err
+    assert "2 de 4 bancos fallaron" in captured.err
+    assert "2 sin sesión PSD2" in captured.err
+    assert "myinvestor boom" in captured.err
+
+
+def test_handle_nothing_to_sync_prints_skip_and_exits_zero(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    mocker: MockerFixture,
+) -> None:
+    """No session anywhere: nothing failed, nothing was written, nothing is emailed."""
+    outcomes = [
+        BankOutcome(name, False, None, _NOT_ONBOARDED_REASON, not_onboarded=True) for name in _BANKS
+    ]
+    monkeypatch.setattr(
+        cli_sync, "run_sync", lambda: _summary(OverallStatus.NOTHING_TO_SYNC, outcomes)
+    )
+    notifier = mocker.Mock(spec=EmailNotifier)
+
+    exit_code = cli_sync.handle(argparse.Namespace(), notifier=notifier)
+
+    assert exit_code == 0
+    notifier.notify_failure.assert_not_called()
+    captured = capsys.readouterr()
+    assert captured.err == ""
+    assert "Sincronización omitida" in captured.out
+    assert "no se ha escrito nada" in captured.out
+    assert "movimientos escritos" not in captured.out
+    assert "FALLÓ" not in captured.out
+    assert captured.out.count("SIN SESIÓN PSD2") >= len(_BANKS)

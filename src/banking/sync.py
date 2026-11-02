@@ -10,7 +10,11 @@ from enum import Enum
 from typing import Sequence
 
 from banking.config.secret_store import SecretStore
-from banking.connectors.enable_banking import EnableBankingConnector, Transaction
+from banking.connectors.enable_banking import (
+    BankNotOnboardedError,
+    EnableBankingConnector,
+    Transaction,
+)
 from banking.connectors.ing import IngConnector
 from banking.connectors.myinvestor import MyInvestorConnector
 from banking.connectors.revolut import RevolutConnector
@@ -81,21 +85,34 @@ class SheetsSyncError(Exception):
 
 
 class OverallStatus(Enum):
-    """The three possible outcomes of a sync run."""
+    """The four possible outcomes of a sync run."""
 
     FULL_SUCCESS = "full_success"
     PARTIAL_FAILURE = "partial_failure"
     TOTAL_FAILURE = "total_failure"
+    NOTHING_TO_SYNC = "nothing_to_sync"
+    """No bank is onboarded yet: nothing failed, and nothing may be written."""
 
 
 @dataclass(frozen=True)
 class BankOutcome:
-    """The outcome of running one bank's connector in a sync run."""
+    """The outcome of running one bank's connector in a sync run.
+
+    ``not_onboarded`` marks a bank that simply has no PSD2 session yet: it is a
+    normal state, so it is neither a success nor a failure. ``failed`` is the
+    only thing the run classification counts.
+    """
 
     bank_name: str
     succeeded: bool
     rows_written: int | None
     failure_reason: str | None
+    not_onboarded: bool = False
+
+    @property
+    def failed(self) -> bool:
+        """Return True only for a real failure (a bank that had to sync and could not)."""
+        return not self.succeeded and not self.not_onboarded
 
 
 @dataclass(frozen=True)
@@ -118,12 +135,33 @@ def _transform(bank_name: str, transactions: list[Transaction]) -> list[list[Cel
 
 
 def _classify(outcomes: list[BankOutcome]) -> OverallStatus:
-    """Classify the aggregate result of a sync run from its per-bank outcomes."""
-    if all(o.succeeded for o in outcomes):
+    """Classify the aggregate result of a sync run from its per-bank outcomes.
+
+    Only real failures decide: a bank with no PSD2 session yet is a normal
+    state, so a run where nothing failed is a full success even if some banks
+    are merely not onboarded.
+    """
+    failed = [o for o in outcomes if o.failed]
+    if not failed:
         return OverallStatus.FULL_SUCCESS
     if any(o.succeeded for o in outcomes):
         return OverallStatus.PARTIAL_FAILURE
     return OverallStatus.TOTAL_FAILURE
+
+
+def _total_failure_message(
+    failed: list[BankOutcome],
+    not_onboarded: list[BankOutcome],
+) -> str:
+    """Render a total-failure message that does not call onboarded banks failed."""
+    aggregate = "; ".join(f"{o.bank_name}: {o.failure_reason}" for o in failed)
+    if not not_onboarded:
+        return f"All {len(failed)} banks failed: {aggregate}"
+    names = ", ".join(o.bank_name for o in not_onboarded)
+    return (
+        f"No bank could sync. Failed: {aggregate}. "
+        f"Not onboarded (no PSD2 session yet, not a failure): {names}"
+    )
 
 
 def _sync_one_bank(
@@ -132,6 +170,24 @@ def _sync_one_bank(
     """Run one bank's connector, translating any failure into a `BankOutcome`."""
     try:
         transactions = connector.fetch_transactions(start_date, end_date)
+    except BankNotOnboardedError as exc:
+        # A bank without a PSD2 session is a normal state, not a failure: log it
+        # at INFO so the run stays quiet until the consent exists.
+        logger.info(
+            "Sync skipped: bank=%s not onboarded (no PSD2 session yet) reason=%s",
+            connector.BANK_NAME,
+            exc,
+        )
+        return (
+            BankOutcome(
+                bank_name=connector.BANK_NAME,
+                succeeded=False,
+                rows_written=None,
+                failure_reason=str(exc),
+                not_onboarded=True,
+            ),
+            [],
+        )
     except Exception as exc:
         logger.error(
             "Sync failed: bank=%s reason=%s",
@@ -175,6 +231,10 @@ def run_sync(
         SheetsSyncError: writing the combined rows to Google Sheets failed
             (including resolving the destination document ID), after at
             least one bank succeeded.
+
+    When no bank is onboarded (every connector reported a missing PSD2 session),
+    the run finishes with `OverallStatus.NOTHING_TO_SYNC` and the destination tab
+    is left untouched: writing an empty sheet would clear it.
     """
     start = time.monotonic()
     execution_date = today or date.today()
@@ -187,8 +247,6 @@ def run_sync(
     if not resolved_connectors:
         raise NoConnectorsError("run_sync requires at least one bank connector.")
 
-    writer = writer or SheetsWriter()
-
     outcomes: list[BankOutcome] = []
     rows: list[list[CellValue]] = []
     for connector in resolved_connectors:
@@ -199,17 +257,46 @@ def run_sync(
     overall_status = _classify(outcomes)
 
     if overall_status == OverallStatus.TOTAL_FAILURE:
-        aggregate = "; ".join(f"{o.bank_name}: {o.failure_reason}" for o in outcomes)
-        logger.error("Sync failed: all four banks failed: %s", aggregate)
+        failed = [o for o in outcomes if o.failed]
+        not_onboarded = [o for o in outcomes if o.not_onboarded]
+        aggregate = "; ".join(f"{o.bank_name}: {o.failure_reason}" for o in failed)
+        logger.error(
+            "Sync failed: banks_failed=%d banks_not_onboarded=%d: %s",
+            len(failed),
+            len(not_onboarded),
+            aggregate,
+        )
         raise AllBanksFailedError(
-            f"All four banks failed: {aggregate}", outcomes=outcomes, tab_name=tab_name
+            _total_failure_message(failed, not_onboarded),
+            outcomes=outcomes,
+            tab_name=tab_name,
+        )
+
+    if not any(o.succeeded for o in outcomes):
+        # Every bank is merely not onboarded. Nothing failed, but nothing may be
+        # written either: the writer clears the tab before filling it, so running
+        # it here would erase a month that no bank contributed to.
+        duration = time.monotonic() - start
+        logger.info(
+            "Sync skipped: no bank is onboarded tab=%s banks=%d duration=%.3fs",
+            tab_name,
+            len(outcomes),
+            duration,
+        )
+        return SyncSummary(
+            outcomes=outcomes,
+            overall_status=OverallStatus.NOTHING_TO_SYNC,
+            tab_name=tab_name,
+            total_rows_written=0,
+            duration_seconds=duration,
         )
 
     try:
         resolved_document_id = (
             document_id if document_id is not None else SecretStore().get(_SHEET_ID_KEY)
         )
-        writer.write(
+        resolved_writer = writer or SheetsWriter()
+        resolved_writer.write(
             document_id=resolved_document_id, tab_name=tab_name, headers=_HEADERS, rows=rows
         )
     except Exception as exc:

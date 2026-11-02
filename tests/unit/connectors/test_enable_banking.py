@@ -11,6 +11,7 @@ import pytest
 
 from banking.config.secret_store import SecretStore
 from banking.connectors.enable_banking import (
+    BankNotOnboardedError,
     ConnectorConfigError,
     EnableBankingAPIError,
     EnableBankingConnector,
@@ -681,7 +682,7 @@ def test_unconfigured_session_fails_locally_without_calling_the_api(
         return httpx.Response(200, json={"transactions": [], "continuation_key": None})
 
     connector = _FakeConnector(http_client=mock_http_client(handler))
-    with pytest.raises(ConnectorConfigError) as excinfo:
+    with pytest.raises(BankNotOnboardedError) as excinfo:
         connector.fetch_transactions(date(2026, 8, 1), date(2026, 8, 31))
 
     message = str(excinfo.value)
@@ -692,6 +693,9 @@ def test_unconfigured_session_fails_locally_without_calling_the_api(
     # GitHub Actions mask it as *** in the run summary.
     assert "unconfigured" not in message
     assert calls["n"] == 0
+    # A bank without a session is a normal state, not a failure: the dedicated
+    # exception keeps it distinguishable without matching on message text.
+    assert isinstance(excinfo.value, BankNotOnboardedError)
 
 
 def test_unconfigured_placeholder_is_recognized_regardless_of_case_and_spaces(
@@ -704,8 +708,16 @@ def test_unconfigured_placeholder_is_recognized_regardless_of_case_and_spaces(
         raise AssertionError("no request should reach the API")
 
     connector = _FakeConnector(http_client=mock_http_client(handler))
-    with pytest.raises(ConnectorConfigError):
+    with pytest.raises(BankNotOnboardedError):
         connector.fetch_balance()
+
+
+def test_bank_not_onboarded_error_is_still_a_connector_config_error() -> None:
+    """The new state must keep every existing ``except ConnectorConfigError`` working."""
+    assert issubclass(BankNotOnboardedError, ConnectorConfigError)
+
+    with pytest.raises(ConnectorConfigError):
+        raise BankNotOnboardedError("no PSD2 session yet")
 
 
 def test_a_real_session_id_is_still_sent_to_the_api(

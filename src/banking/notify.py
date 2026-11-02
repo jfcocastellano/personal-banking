@@ -195,18 +195,41 @@ def _count_succeeded(outcomes: list[BankOutcome]) -> int:
     return sum(1 for outcome in outcomes if outcome.succeeded)
 
 
+def _count_failed(outcomes: list[BankOutcome]) -> int:
+    """Return how many banks failed for real (a bank without a session is not a failure)."""
+    return sum(1 for outcome in outcomes if outcome.failed)
+
+
+def _count_not_onboarded(outcomes: list[BankOutcome]) -> int:
+    """Return how many banks simply have no PSD2 session yet."""
+    return sum(1 for outcome in outcomes if outcome.not_onboarded)
+
+
 def _build_subject(outcomes: list[BankOutcome], sheets_error: str | None, tab_name: str) -> str:
-    """Build the email subject for the run's failure mode (see research.md)."""
+    """Build the email subject for the run's failure mode (see research.md).
+
+    Only real failures are counted: a bank with no PSD2 session yet is reported
+    as context, so a run with one failure and one such bank still reads as one
+    failure.
+    """
     succeeded = _count_succeeded(outcomes)
+    failed = _count_failed(outcomes)
+    not_onboarded = _count_not_onboarded(outcomes)
 
     if sheets_error is None:
-        if succeeded and succeeded < len(outcomes):
-            return (
-                f"Sincronización parcial: {succeeded}/{len(outcomes)} bancos — fallo en {tab_name}"
-            )
-        return f"Sincronización fallida: los 4 bancos fallaron — {tab_name}"
+        if succeeded == 0:
+            # Total failure: every bank that had to sync failed, whatever the
+            # banks without a session did. Calling this "parcial" while the run
+            # exits 1 would contradict the exit code.
+            qualifier = f" ({not_onboarded} sin sesión PSD2)" if not_onboarded else ""
+            return f"Sincronización fallida: los {failed} bancos fallaron{qualifier} — {tab_name}"
+        qualifier = f" ({not_onboarded} sin sesión PSD2)" if not_onboarded else ""
+        return (
+            f"Sincronización parcial: {succeeded}/{len(outcomes)} bancos{qualifier} "
+            f"— fallo en {tab_name}"
+        )
 
-    if any(not outcome.succeeded for outcome in outcomes):
+    if failed:
         return (
             "Sincronización fallida: error escribiendo en Google Sheets "
             f"(con fallos de banco) — {tab_name}"
@@ -233,8 +256,14 @@ def _build_body(
     for outcome in outcomes:
         if outcome.succeeded:
             lines.append(f"  - {outcome.bank_name}: {outcome.rows_written} movimientos")
+        elif outcome.not_onboarded:
+            lines.append(f"  - {outcome.bank_name}: SIN SESIÓN PSD2 — {outcome.failure_reason}")
         else:
             lines.append(f"  - {outcome.bank_name}: FALLÓ — {outcome.failure_reason}")
+    not_onboarded = [o.bank_name for o in outcomes if o.not_onboarded]
+    if not_onboarded:
+        lines.append("")
+        lines.append("Sin sesión PSD2 (no cuentan como fallo): " + ", ".join(not_onboarded))
     if sheets_error is not None:
         lines.extend(["", f"ERROR (Sheets): {sheets_error}"])
     return "\n".join(lines) + "\n"
