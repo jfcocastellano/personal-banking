@@ -332,6 +332,82 @@ def test_notify_failure_partial_sends_one_email_with_subject_headers_and_body(
     assert _SMTP_VALUES["SMTP_PASSWORD"] not in str(message["Subject"])
 
 
+def test_notify_failure_renders_a_reason_for_a_succeeded_bank(
+    mocker: MockerFixture,
+) -> None:
+    """A succeeded bank can still carry a balance reason; the email must name it."""
+    smtp, factory = _smtp_double(mocker)
+    notifier = EmailNotifier(store=_store_with(), smtp_factory=factory)
+    outcomes = _outcomes(
+        ("ING España", True, 12, "saldo no disponible: quota exceeded"),
+        ("Revolut", False, None, "sesión expirada"),
+    )
+
+    status = notifier.notify_failure(
+        outcomes=outcomes, sheets_error=None, tab_name="2026-08", duration_seconds=1.0
+    )
+
+    assert status is DeliveryStatus.SENT
+    body = _sent_message(smtp).get_content()
+    assert (
+        "  - ING España: 12 movimientos — saldo no disponible: quota exceeded" in body.splitlines()
+    )
+    assert "  - Revolut: FALLÓ — sesión expirada" in body.splitlines()
+
+
+def test_notify_failure_keeps_a_succeeded_bank_without_a_reason_unchanged(
+    mocker: MockerFixture,
+) -> None:
+    """No reason means the exact movement-count line sync has always sent."""
+    smtp, factory = _smtp_double(mocker)
+    notifier = EmailNotifier(store=_store_with(), smtp_factory=factory)
+    outcomes = _outcomes(
+        ("ING España", True, 12, None),
+        ("Revolut", False, None, "sesión expirada"),
+    )
+
+    status = notifier.notify_failure(
+        outcomes=outcomes, sheets_error=None, tab_name="2026-08", duration_seconds=1.0
+    )
+
+    assert status is DeliveryStatus.SENT
+    lines = _sent_message(smtp).get_content().splitlines()
+    assert "  - ING España: 12 movimientos" in lines
+    assert not any(line.startswith("  - ING España: 12 movimientos —") for line in lines)
+
+
+def test_notify_failure_sync_shaped_payload_is_byte_identical(
+    mocker: MockerFixture, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """sync never sets a reason on succeeded banks, so its body must not change."""
+    monkeypatch.setattr(notify, "_format_timestamp", lambda: "2026-11-05 10:00")
+    smtp, factory = _smtp_double(mocker)
+    notifier = EmailNotifier(store=_store_with(), smtp_factory=factory)
+    outcomes = _outcomes(
+        ("ING España", True, 3, None),
+        ("Revolut", False, None, "sesión expirada"),
+        ("Banco Sabadell", True, 4, None),
+    )
+
+    status = notifier.notify_failure(
+        outcomes=outcomes, sheets_error=None, tab_name="2026-08", duration_seconds=1.0
+    )
+
+    assert status is DeliveryStatus.SENT
+    assert _sent_message(smtp).get_content() == (
+        "La sincronización bancaria terminó con errores.\n"
+        "\n"
+        "Fecha: 2026-11-05 10:00\n"
+        "Pestaña: 2026-08\n"
+        "Duración: 1.00s\n"
+        "\n"
+        "Bancos:\n"
+        "  - ING España: 3 movimientos\n"
+        "  - Revolut: FALLÓ — sesión expirada\n"
+        "  - Banco Sabadell: 4 movimientos\n"
+    )
+
+
 def test_notify_failure_partial_with_two_failed_banks_sends_a_single_email(
     mocker: MockerFixture,
 ) -> None:

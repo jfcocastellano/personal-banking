@@ -141,6 +141,16 @@ def _summary_panel_last_row(balance_count: int) -> int:
 _MAX_BALANCE_ROWS = 8
 _SUMMARY_PANEL_LAST_ROW = _summary_panel_last_row(_MAX_BALANCE_ROWS)  # 19
 
+
+def _summary_panel_range_last_row(balance_count: int) -> int:
+    """Last row of the ``J:K`` panel every path clears, writes and formats.
+
+    Creation and refresh both use this, so the money format covers the summary
+    totals from the first run on and no path can format a different range.
+    """
+    return max(_summary_panel_last_row(balance_count), _SUMMARY_PANEL_LAST_ROW)
+
+
 _EXPENSE_REGION = f"B{_EXPENSE_FIRST_ROW}:E{_EXPENSE_LAST_ROW}"
 _AMOUNT_RANGE = f"$E${_EXPENSE_FIRST_ROW}:$E${_EXPENSE_LAST_ROW}"
 _INCOME_FORMULA = f'=SUMIF({_AMOUNT_RANGE},">0",{_AMOUNT_RANGE})'
@@ -155,8 +165,8 @@ _TITLE_RANGES: tuple[str, ...] = (
 
 _NO_REFERENCE_DATE = "sin dato de referencia"
 
-# Tab-name suffix shared by every layout tab. ``banking.cli.layout`` keeps its
-# own copy because it owns the manual backfill path; both must stay in sync.
+# Tab-name suffix shared by every layout tab. ``banking.cli.layout`` builds its
+# tab names through ``layout_tab_name``, so the format lives here only.
 _LAYOUT_TAB_SUFFIX = " Gastos"
 
 _BOLD = {"textFormat": {"bold": True}}
@@ -455,7 +465,7 @@ def _write_summary_region(worksheet: gspread.Worksheet, balances: Sequence[Accou
     panel is shorter, so a dropped account leaves no stale row behind.
     """
     first_row = _SUMMARY_FIRST_ROW
-    last_row = max(_summary_panel_last_row(len(balances)), _SUMMARY_PANEL_LAST_ROW)
+    last_row = _summary_panel_range_last_row(len(balances))
 
     cells: dict[int, list[CellValue]] = {}
 
@@ -494,12 +504,13 @@ def _merge_titles(worksheet: gspread.Worksheet) -> None:
         raise _translate_api_error(exc) from exc
 
 
-def _balance_total_row(balance_count: int) -> int:
-    return _BALANCE_FIRST_ROW + balance_count
-
-
 def _apply_light_formatting(worksheet: gspread.Worksheet, balance_count: int) -> None:
-    """Bold the titles and headers, and use a euro format for the money cells."""
+    """Bold the titles and headers, and use a euro format for the money cells.
+
+    The ``K`` range is the whole summary/balances panel, the same one
+    ``_write_summary_region`` formats on every later run, so the summary totals
+    look like money from the first run on.
+    """
     try:
         worksheet.format(f"B{_TITLE_ROW}:K{_TITLE_ROW}", _BOLD)
         worksheet.format(f"B{_HEADER_ROW}:K{_HEADER_ROW}", _BOLD)
@@ -512,7 +523,7 @@ def _apply_light_formatting(worksheet: gspread.Worksheet, balance_count: int) ->
             _MONEY_FORMAT,
         )
         worksheet.format(
-            f"K{_BALANCE_FIRST_ROW}:K{_balance_total_row(balance_count)}",
+            f"K{_SUMMARY_FIRST_ROW}:K{_summary_panel_range_last_row(balance_count)}",
             _MONEY_FORMAT,
         )
     except gspread.exceptions.APIError as exc:

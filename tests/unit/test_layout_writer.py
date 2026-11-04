@@ -263,19 +263,36 @@ def test_creation_applies_bold_titles_headers_and_money_formats() -> None:
     writer.write("doc-1", "2026-08 Gastos", [_expense()], [_balance()])
 
     sheet = spreadsheet.sheets["2026-08 Gastos"]
-    assert ("B2:K2", BOLD) in sheet.formats
-    assert ("B3:K3", BOLD) in sheet.formats
-    assert ("E4:E403", MONEY_FORMAT) in sheet.formats
-    assert ("H4:H53", MONEY_FORMAT) in sheet.formats
+    # The exact creation-time ranges, in the order they are applied. The money
+    # format over the panel is the one the refresh uses (J4:K19 floor), so the
+    # summary totals K4:K6 look like money from the first run on.
+    assert sheet.formats == [
+        ("B2:K2", BOLD),
+        ("B3:K3", BOLD),
+        ("E4:E403", MONEY_FORMAT),
+        ("H4:H53", MONEY_FORMAT),
+        (f"K{SUMMARY_FIRST_ROW}:K{SUMMARY_LAST_ROW}", MONEY_FORMAT),
+    ]
     formatted_ranges = [name for name, _format in sheet.formats]
-    assert any(name.startswith("K10:K") for name in formatted_ranges)
-    assert all(
-        fmt == MONEY_FORMAT
-        for name, fmt in sheet.formats
-        if name.startswith("K") and name != "K4:K6"
-    )
+    # The balances-only range creation used to format (K10:K11 here) left the
+    # summary cells unformatted until a refresh; it must not come back.
+    assert not any(name.startswith("K10:K") for name in formatted_ranges)
     # Only formatting ranges are used, never a whole-sheet clear/format.
     assert "A1:K403" not in formatted_ranges
+
+
+def test_creation_formats_a_panel_taller_than_the_fixed_floor() -> None:
+    """The creation range follows the same helper the refresh computes with."""
+    spreadsheet = FakeSpreadsheet()
+    writer, _client = _writer(spreadsheet)
+    balances = [_balance(bank=f"Banco {index}") for index in range(1, 10)]
+
+    writer.write("doc-1", "2026-08 Gastos", [_expense()], balances)
+
+    sheet = spreadsheet.sheets["2026-08 Gastos"]
+    # Nine balances put the reference date on row 20, past the fixed floor of
+    # 19, so the range has to grow with the panel instead of being hardcoded.
+    assert (f"K{SUMMARY_FIRST_ROW}:K{SUMMARY_LAST_ROW + 1}", MONEY_FORMAT) in sheet.formats
 
 
 def test_creation_merges_the_three_title_ranges() -> None:
