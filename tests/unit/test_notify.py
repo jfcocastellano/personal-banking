@@ -359,6 +359,46 @@ def test_notify_failure_partial_with_two_failed_banks_sends_a_single_email(
     assert "- Banco Sabadell: 4 movimientos" in body
 
 
+# --- Bancos sin sesión PSD2: contexto, no un segundo modo de fallo ----------
+
+
+def test_notify_failure_counts_only_real_failures_and_lists_not_onboarded_separately(
+    mocker: MockerFixture,
+) -> None:
+    """One real failure + one bank without a session: the email counts one failure."""
+    smtp, factory = _smtp_double(mocker)
+    notifier = EmailNotifier(store=_store_with(), smtp_factory=factory)
+    outcomes = [
+        BankOutcome("ING España", True, 3, None),
+        BankOutcome("Revolut", False, None, "re-auth needed"),
+        BankOutcome(
+            "MyInvestor",
+            False,
+            None,
+            "has no PSD2 session configured yet",
+            not_onboarded=True,
+        ),
+        BankOutcome("Banco Sabadell", True, 1, None),
+    ]
+
+    status = notifier.notify_failure(
+        outcomes=outcomes, sheets_error=None, tab_name="2026-08", duration_seconds=2.0
+    )
+
+    assert status is DeliveryStatus.SENT
+    smtp.send_message.assert_called_once()
+    message = _sent_message(smtp)
+    assert message["Subject"] == (
+        "Sincronización parcial: 2/4 bancos (1 sin sesión PSD2) — fallo en 2026-08"
+    )
+    body = message.get_content()
+    assert "- Revolut: FALLÓ — re-auth needed" in body
+    assert "- MyInvestor: SIN SESIÓN PSD2 — has no PSD2 session configured yet" in body
+    assert "Sin sesión PSD2 (no cuentan como fallo): MyInvestor" in body
+    assert "- ING España: 3 movimientos" in body
+    assert "- Banco Sabadell: 1 movimientos" in body
+
+
 # --- US2: fallo total y fallo de escritura en Sheets ------------------------
 
 
@@ -503,3 +543,29 @@ def test_notify_failure_failed_subject_when_configuration_skips(
 
     assert status is DeliveryStatus.SKIPPED
     factory.assert_not_called()
+
+
+def test_notify_failure_total_subject_is_not_partial_when_banks_lack_a_session(
+    mocker: MockerFixture,
+) -> None:
+    """A run that wrote nothing exits 1, so its subject must not read as partial."""
+    smtp, factory = _smtp_double(mocker)
+    notifier = EmailNotifier(store=_store_with(), smtp_factory=factory)
+
+    status = notifier.notify_failure(
+        outcomes=[
+            BankOutcome("ING España", False, None, "ReauthorizationRequiredError: caducada"),
+            BankOutcome("Revolut", False, None, "RateLimitExceededError: límite"),
+            BankOutcome("MyInvestor", False, None, "sin sesión PSD2", not_onboarded=True),
+            BankOutcome("Banco Sabadell", False, None, "sin sesión PSD2", not_onboarded=True),
+        ],
+        sheets_error=None,
+        tab_name="2026-08",
+        duration_seconds=0.0,
+    )
+
+    assert status is DeliveryStatus.SENT
+    message = _sent_message(smtp)
+    assert message["Subject"] == (
+        "Sincronización fallida: los 2 bancos fallaron (2 sin sesión PSD2) — 2026-08"
+    )

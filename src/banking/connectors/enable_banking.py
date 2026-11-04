@@ -58,6 +58,17 @@ class ConnectorConfigError(Exception):
     """
 
 
+class BankNotOnboardedError(ConnectorConfigError):
+    """Raised when a bank has no PSD2 session yet; a normal state, not a failure.
+
+    The bank's authorization is still pending, so there is nothing to fetch and
+    nothing to fix on every run. It subclasses `ConnectorConfigError` so every
+    existing ``except ConnectorConfigError`` keeps working, and it exists as its
+    own type so callers can tell "not onboarded" apart from a real configuration
+    break (a missing or empty secret), which must stay loud.
+    """
+
+
 class InvalidDateRangeError(Exception):
     """Raised when start_date is after end_date."""
 
@@ -395,7 +406,7 @@ class EnableBankingConnector:
     ) -> str:
         """Look up the session's linked account, translating unusable-session errors."""
         if _is_unconfigured_session(session_id):
-            raise ConnectorConfigError(
+            raise BankNotOnboardedError(
                 f"{self.BANK_NAME} has no PSD2 session configured: the secret still "
                 "holds the inert placeholder documented in docs/credentials-setup.md "
                 "section 6. Authorize the bank to read its data (section 3)."

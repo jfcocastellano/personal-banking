@@ -258,8 +258,51 @@ Qué destrabaría esto, en orden de probabilidad:
    otro conector, porque todo el proyecto está apoyado en Enable Banking.
 
 Mientras siga así, `ENABLE_BANKING_SESSION_ID_SABADELL` se queda en
-`unconfigured` (§ 6) y las ejecuciones terminan en fallo parcial, que es el
-comportamiento correcto.
+`unconfigured` (§ 6). El banco se reporta en el resumen como `SIN SESIÓN PSD2` y
+**no cuenta como fallo**: por su causa no hay email ni exit `3`.
+
+**3.6 — Particularidades: MyInvestor (roto del lado de Inversis)**
+
+**Estado: bloqueado (verificado el 2026-11-01).** MyInvestor no tiene login PSD2
+propio: su área de cliente corre sobre la plataforma de **Inversis**, y ese login
+está roto. No hay parámetro nuestro que lo evite.
+
+ASPSP a usar: `{"name": "MyInvestor Banco", "country": "ES"}` (BIC `BACAESMM`,
+solo `psu_type` personal). Enable Banking lo publica con **`beta: true`**, igual
+que al ASPSP `Banco Inversis` (`INVLESMMXXX`): son integraciones que el proveedor
+todavía no da por maduras.
+
+Síntoma exacto, en cuatro pasos:
+
+1. La URL de consentimiento redirige a
+   `https://www.inversis.com/trans/inversis/loginOauth?token=…&codigo=…`.
+2. Esa página carga una pantalla de login con el usuario ya puesto y el botón
+   `ENTRAR`. Al enviarlo, su propio JavaScript hace
+   `POST https://api.inversis.com/inversis/authorize`, que responde `302 Found`.
+3. El navegador sigue el `302` a `loginOauth.html`, y ese recurso devuelve `404`.
+   La respuesta tampoco trae `Access-Control-Allow-Origin`, así que el XHR queda
+   bloqueado por CORS.
+4. La pantalla muestra `Se ha producido un error`, sin más detalle.
+
+Lo mismo ocurre con el ASPSP `Banco Inversis`, así que **las dos puertas a
+MyInvestor fallan en el mismo front-end**, antes de llegar al consentimiento. Los
+`authorization_id` de las dos pruebas fueron `27f2fcb9-50ea-4704-9e6a-fad2c099a66f`
+(MyInvestor Banco) y `9df80f9e-550a-4387-a97c-c8d26779bb90` (Banco Inversis),
+ambos del 2026-11-01.
+
+Por eso `ENABLE_BANKING_SESSION_ID_MYINVESTOR` se queda en `unconfigured` (§ 6),
+igual que Sabadell: no es una sesión vencida ni un error de credenciales. Se
+reporta como `SIN SESIÓN PSD2` y no cuenta como fallo.
+
+Detalle de diagnóstico que vale tener a mano: Enable Banking **no expone el
+estado de una autorización** (`GET /auth/{id}` devuelve `404`), así que la única
+señal de estas pruebas es el navegador. Por eso los cuatro pasos de arriba están
+anotados: son la evidencia que el proveedor pide y que no se puede reconstruir
+después.
+
+Qué destrabaría esto: que Enable Banking o Inversis arreglen el front-end de
+login. Es su bug y no requiere cambios acá; tampoco hay escalada posible del lado
+del titular, porque el consentimiento nunca llega a emitirse.
 
 **3.6 — Particularidades: MyInvestor (roto del lado de Inversis)**
 
@@ -357,12 +400,15 @@ for bank in REVOLUT MYINVESTOR SABADELL; do
 done
 ```
 
-Consecuencia esperada: cada ejecución termina en **fallo parcial** (exit `3`),
-el resumen muestra `ING: N movimientos` y tres líneas `FALLÓ — ...`, y llega un
-email agregado. Es el comportamiento correcto, no un error de configuración.
+Consecuencia esperada: cada ejecución termina en **`success`** (exit `0`). El
+resumen muestra los bancos con sesión con sus movimientos, una línea
+`SIN SESIÓN PSD2 — <motivo>` por cada banco sin sesión y, debajo, el aviso
+`Bancos sin sesión PSD2 (no cuentan como fallo): ...`. No llega ningún email:
+solo se envía cuando falla de verdad un banco que sí tenía sesión.
 
-Desde el 2026-11-01 el conector reconoce ese valor y falla **localmente**, sin
-llamar al proveedor ni gastar cuota PSD2. El resumen dice:
+Desde el 2026-11-01 el conector reconoce ese valor antes de llamar al proveedor,
+sin gastar cuota PSD2, y lo reporta como `SIN SESIÓN PSD2`. El motivo que aparece
+tras la raya es:
 
 ```
 Banco Sabadell has no PSD2 session configured: the secret still holds the inert
@@ -372,13 +418,16 @@ bank to read its data (section 3).
 
 El mensaje no repite el valor literal a propósito: es el contenido de un
 secreto, así que Actions lo enmascararía como `***` y taparía justo la parte
-informativa.
+informativa: el diagnóstico se entiende sin leer el log y sin revelar el secreto,
+en lugar del `HTTP 422` que parecía un problema de credenciales.
 
-en lugar de un `HTTP 422` que parecía un problema de credenciales.
+Si **ninguna** de las cuatro tiene sesión, no se escribe nada: la pestaña del mes
+queda intacta y el resumen dice `Sincronización omitida: ningún banco tiene sesión
+PSD2`. Escribir una hoja vacía la borraría.
 
 Cuando autorices un banco más, repite el § 3 cambiando `aspsp` y la clave
-(`ENABLE_BANKING_SESSION_ID_REVOLUT`, etc.). Al completar los cuatro, las
-ejecuciones pasan a `success` y dejan de enviar email.
+(`ENABLE_BANKING_SESSION_ID_REVOLUT`, etc.). A partir de ahí ese banco deja de
+aparecer como `SIN SESIÓN PSD2` y empieza a aportar sus movimientos.
 
 ---
 
@@ -391,8 +440,9 @@ Una sola ejecución real (consume cuota PSD2 de la cuenta de ING; el límite es 
 python -m banking sync; echo "exit=$?"
 ```
 
-Esperado con solo ING: exit `3`, resumen `Sincronización parcial: 1/4 bancos`,
-movimientos escritos en la pestaña del mes y email recibido.
+Esperado con solo ING: exit `0`, resumen `Sincronización completada: 1/4
+bancos`, movimientos escritos en la pestaña del mes y **ningún** email (los tres
+bancos sin sesión aparecen como `SIN SESIÓN PSD2` y no cuentan como fallo).
 
 ---
 
@@ -443,9 +493,12 @@ gh workflow run sync.yml --repo jfcocastellano/personal-banking
 gh run watch --repo jfcocastellano/personal-banking
 ```
 
-Esperado (con solo ING): `failure`, porque el exit code es `3` (fallo parcial);
-resumen con una línea por banco, tres `FALLÓ`, la duración y el enlace a los
-logs. Ver la ejecución desde la pestaña *Actions* y comprobar la hoja.
+Esperado (con solo ING): `success`, porque no hay ningún fallo real; resumen con
+una línea por banco, tres `SIN SESIÓN PSD2`, la duración y el enlace a los logs.
+Ver la ejecución desde la pestaña *Actions* y comprobar la hoja.
+
+En cuanto un banco que sí tenía sesión falle, la misma ejecución pasa a exit `3`,
+`failure` y email: lo silencioso es la falta de sesión, no el fallo.
 
 Si el paso **Validar configuración** falla, el mensaje `##[error]Faltan secretos
 de GitHub: ...` nombra exactamente los que faltan y no se ha llamado a ninguna
@@ -465,7 +518,9 @@ API.
 **Cómo se detecta una sesión caducada**: el conector lanza
 `ReauthorizationRequiredError` (HTTP 403 o `status: "expired"`), ese banco cuenta
 como fallido, el resumen lo dice con su motivo y el email de IT6 llega en la
-misma ejecución. No hay que leer logs para enterarse.
+misma ejecución. No hay que leer logs para enterarse. No confundir este caso con
+un banco que nunca tuvo sesión: ese se reporta como `SIN SESIÓN PSD2` y no cuenta
+como fallo.
 
 ### 10.1 Cuando el proveedor responde 422
 

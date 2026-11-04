@@ -81,10 +81,10 @@ Códigos de salida de `banking sync`:
 
 | Código | Significado |
 |---|---|
-| `0` | Los 4 bancos sincronizados y escritos (sin email) |
-| `1` | Los 4 bancos fallaron — nada escrito; email enviado u omitido |
+| `0` | Ningún banco falló y la hoja quedó escrita (sin email). Incluye los bancos sin sesión PSD2, que se reportan aparte y no cuentan como fallo, y la corrida en la que ninguno tiene sesión, que no escribe nada (`Sincronización omitida`) |
+| `1` | Ningún banco que tenía que sincronizar lo logró — nada escrito; email enviado u omitido |
 | `2` | ≥1 banco exitoso pero falló la escritura en Google Sheets; email enviado u omitido |
-| `3` | ≥1 banco exitoso y ≥1 fallido, escritura correcta; email enviado u omitido |
+| `3` | ≥1 banco exitoso y ≥1 fallo **real**, escritura correcta; email enviado u omitido |
 | `4` | **Fallo de entrega del email** (el resumen de la ejecución ya se imprimió) |
 
 ---
@@ -103,7 +103,7 @@ GitHub Actions (free tier). Las credenciales sensibles se almacenan como GitHub 
 Sin base de datos. Google Sheets es el único almacén de datos.
 
 **Resiliencia**
-Si una API bancaria falla, el proceso continúa con las entidades restantes y notifica el fallo parcial por email. No se aborta la ejecución completa.
+Si una API bancaria falla, el proceso continúa con las entidades restantes y notifica el fallo parcial por email. No se aborta la ejecución completa. Un banco que todavía no tiene sesión PSD2 se reporta aparte (`SIN SESIÓN PSD2`) y no cuenta como fallo: no hay email ni exit `3` por su causa.
 
 ---
 
