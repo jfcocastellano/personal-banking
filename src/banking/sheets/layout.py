@@ -143,6 +143,10 @@ _TITLE_RANGES: tuple[str, ...] = (
 
 _NO_REFERENCE_DATE = "sin dato de referencia"
 
+# Tab-name suffix shared by every layout tab. ``banking.cli.layout`` keeps its
+# own copy because it owns the manual backfill path; both must stay in sync.
+_LAYOUT_TAB_SUFFIX = " Gastos"
+
 _BOLD = {"textFormat": {"bold": True}}
 _MONEY_FORMAT = {"numberFormat": {"type": "NUMBER", "pattern": '#,##0.00 "€"'}}
 
@@ -234,6 +238,18 @@ def balances_from_banks(banks: Sequence[BankSource]) -> list[AccountBalance]:
         )
         for bank in banks
     ]
+
+
+def layout_tab_name(month_start: date) -> str:
+    """Return the layout tab name for the month starting on ``month_start``.
+
+    Args:
+        month_start: Any date of the target month; the day is ignored.
+
+    Returns:
+        ``<YYYY-MM> Gastos``, the single tab-name format the layout owns.
+    """
+    return f"{month_start.strftime('%Y-%m')}{_LAYOUT_TAB_SUFFIX}"
 
 
 def _expense_row(transaction: ExpenseRow) -> list[CellValue]:

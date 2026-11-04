@@ -24,13 +24,17 @@ from datetime import date
 
 from banking.config.secret_store import SecretStore
 from banking.connectors.enable_banking import Balance, EnableBankingConnector, Transaction
-from banking.sheets.layout import LayoutWriter, balances_from_banks, expense_rows_from_banks
+from banking.sheets.layout import (
+    LayoutWriter,
+    balances_from_banks,
+    expense_rows_from_banks,
+    layout_tab_name,
+)
 from banking.sync import _CONNECTOR_CLASSES
 
 logger = logging.getLogger(__name__)
 
 _SHEET_ID_KEY = "GOOGLE_SHEET_ID"
-_LAYOUT_TAB_SUFFIX = " Gastos"
 _MONTH_PATTERN = re.compile(r"(\d{4})-(\d{2})")
 
 EXIT_OK = 0
@@ -164,7 +168,7 @@ def _month_range(month_start: date, today: date) -> tuple[date, date]:
 
 
 def _tab_name(month_start: date) -> str:
-    return f"{month_start.strftime('%Y-%m')}{_LAYOUT_TAB_SUFFIX}"
+    return layout_tab_name(month_start)
 
 
 def _failure_reason(exc: Exception) -> str:

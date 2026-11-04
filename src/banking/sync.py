@@ -126,7 +126,7 @@ class SyncSummary:
     duration_seconds: float
 
 
-def _transform(bank_name: str, transactions: list[Transaction]) -> list[list[CellValue]]:
+def transaction_rows(bank_name: str, transactions: list[Transaction]) -> list[list[CellValue]]:
     """Convert transactions to rows matching `_HEADERS`, in fixed column order."""
     return [
         [tx.booking_date.isoformat(), bank_name, tx.description, float(tx.amount), tx.currency]
@@ -252,7 +252,7 @@ def run_sync(
     for connector in resolved_connectors:
         outcome, transactions = _sync_one_bank(connector, range_start, execution_date)
         outcomes.append(outcome)
-        rows.extend(_transform(outcome.bank_name, transactions))
+        rows.extend(transaction_rows(outcome.bank_name, transactions))
 
     overall_status = _classify(outcomes)
 

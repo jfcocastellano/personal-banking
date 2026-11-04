@@ -56,3 +56,12 @@ _(se completa al cerrar cada tarea: commit, gates y evidencia)_
 - RED observado: `ModuleNotFoundError: No module named 'banking.daily'` al correr `tests/unit/test_daily.py` antes de implementar.
 - GREEN: `8 passed`; `ruff check` limpio; `ruff format --check` 2 archivos; `mypy src/banking/daily.py` sin issues.
 - Decisión no fijada por la tarea: `not_onboarded` es pegajoso — si una etapa lanza `BankNotOnboardedError`, la marca queda aunque la otra etapa responda. Logs: `banking.daily` con `Daily pass skipped stage: ...` (INFO) y `Daily pass stage failed: ...` (ERROR).
+
+### T002 — cerrada
+
+- Commit: `feat(daily): classify the run and write both tabs from one fetch`.
+- RED observado: `ImportError: cannot import name 'DailySheetsError' from 'banking.daily'` antes de implementar.
+- GREEN: 305 tests unitarios (baseline 295, +10 nuevos); `ruff check`, `ruff format --check` y `mypy src` limpios.
+- Enabling edits: `sync._transform` pasa a `transaction_rows` (mismo cuerpo, un call site), y `sheets/layout.py` gana `layout_tab_name`, que ahora usan los dos caminos — se eliminó el `_LAYOUT_TAB_SUFFIX` duplicado del CLI.
+- Decisión fuera del brief: `DailySheetsError.stage` es `Literal["raw", "layout"]`; el fallo al resolver `GOOGLE_SHEET_ID` cae en `stage="raw"`, igual que en `run_sync`.
+- Deuda declarada: `daily._total_failure_message` re-implementa el texto de `sync` (el original está tipado para `BankOutcome`); si cambia uno hay que cambiar el otro.
