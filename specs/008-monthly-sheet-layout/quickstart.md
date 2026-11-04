@@ -45,7 +45,7 @@ Dos tabs por mes, y cada uno tiene un único dueño:
 | Tab | Dueño | Cuándo se escribe |
 | --- | --- | --- |
 | `2026-09` | `banking sync` | cada corrida reemplaza el tab completo (sin cambios) |
-| `2026-09 Gastos` | `banking layout` | la primera corrida crea todo; las siguientes reescriben **solo** el bloque de gastos |
+| `2026-09 Gastos` | `banking layout` y `banking daily` | la primera corrida crea todo; las siguientes reescriben el bloque de gastos y, desde `specs/016-single-daily-pass/`, también el resumen y el panel de saldos (`J:K`) |
 
 La columna A queda vacía como separador, igual que en la hoja original. Los tres bloques
 comparten las filas 2 y 3 (títulos y encabezados) y después cada uno avanza por su cuenta:
@@ -91,7 +91,9 @@ es replicar el patrón de los otros cuatro (una clave `ENABLE_BANKING_SESSION_ID
   `sin dato de referencia` si ninguno la informa. El snapshot diario para tener el cierre real
   depende del scheduler (`specs/007`).
 - **Lo que edites dentro de `B4:E403` se sobrescribe** en la siguiente corrida. Lo que edites en
-  `G:H` y `J:K` se respeta. Esa es toda la garantía, y es deliberada.
+  `G:H` se respeta. Esa era toda la garantía cuando se escribió esta guía; desde
+  `specs/016-single-daily-pass/` el resumen y el panel de saldos (`J:K`) también se reescriben en
+  cada corrida, porque quedaban congelados desde la creación de la pestaña.
 - **Tope de 400 movimientos por mes.** Al superarlo el comando falla en vez de truncar en silencio.
 - **Sin anchos de columna.** El formato aplicado es negrita en títulos y encabezados y formato de
   moneda; los anchos hay que ajustarlos a mano una vez por tab.
