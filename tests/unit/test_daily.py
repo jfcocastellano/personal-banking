@@ -12,7 +12,7 @@ from banking.connectors.enable_banking import (
     BankNotOnboardedError,
     Transaction,
 )
-from banking.daily import BankRun, collect_bank_runs
+from banking.daily import BankPass, collect_bank_runs
 
 _START = date(2026, 11, 1)
 _END = date(2026, 11, 20)
@@ -98,12 +98,12 @@ def test_collect_bank_runs_queries_each_bank_once_per_stage() -> None:
         assert connector.transactions_calls == [(_START, _END)]
         assert connector.balance_calls == 1
     assert runs == (
-        BankRun(
+        BankPass(
             bank_name="ING España",
             transactions=(_transaction("ING tx"),),
             balance=_balance("120.00"),
         ),
-        BankRun(
+        BankPass(
             bank_name="Revolut",
             transactions=(
                 _transaction("Revolut tx", "-5.00"),
@@ -146,7 +146,7 @@ def test_transactions_failure_keeps_balance() -> None:
 
     assert connector.balance_calls == 1
     assert runs == (
-        BankRun(
+        BankPass(
             bank_name="ING España",
             transactions=(),
             balance=_balance("120.00"),
@@ -165,7 +165,7 @@ def test_balance_failure_keeps_transactions() -> None:
     runs = collect_bank_runs([connector], start_date=_START, end_date=_END)
 
     assert runs == (
-        BankRun(
+        BankPass(
             bank_name="Revolut",
             transactions=(_transaction("Revolut tx"),),
             balance=None,
@@ -180,7 +180,7 @@ def test_balance_returning_none_is_not_a_failure() -> None:
     runs = collect_bank_runs([connector], start_date=_START, end_date=_END)
 
     assert runs == (
-        BankRun(
+        BankPass(
             bank_name="MyInvestor",
             transactions=(_transaction("MyInvestor tx"),),
             balance=None,
@@ -204,7 +204,7 @@ def test_not_onboarded_in_transactions_marks_bank_and_logs_info(
         runs = collect_bank_runs([connector], start_date=_START, end_date=_END)
 
     assert connector.balance_calls == 1
-    assert runs == (BankRun(bank_name="Sabadell", not_onboarded=True),)
+    assert runs == (BankPass(bank_name="Sabadell", not_onboarded=True),)
 
     records = _daily_records(caplog)
     assert records
@@ -225,7 +225,7 @@ def test_not_onboarded_in_balance_marks_bank_and_logs_info(
         runs = collect_bank_runs([connector], start_date=_START, end_date=_END)
 
     assert runs == (
-        BankRun(
+        BankPass(
             bank_name="Sabadell",
             transactions=(_transaction("Sabadell tx"),),
             not_onboarded=True,
@@ -259,14 +259,14 @@ def test_generic_failure_is_captured_and_other_banks_continue(
         runs = collect_bank_runs([failing, healthy], start_date=_START, end_date=_END)
 
     assert runs == (
-        BankRun(
+        BankPass(
             bank_name="ING España",
             transactions=(),
             balance=None,
             transactions_failure="transactions exploded",
             balance_failure="balance exploded",
         ),
-        BankRun(
+        BankPass(
             bank_name="Revolut",
             transactions=(_transaction("Revolut tx"),),
             balance=_balance("80.00"),

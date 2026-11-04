@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
-class BankRun:
+class BankPass:
     """The raw result of querying one bank once for movements and once for balance.
 
     Each stage fails on its own: a transactions failure leaves ``balance``
@@ -65,7 +65,7 @@ def collect_bank_runs(
     *,
     start_date: date,
     end_date: date,
-) -> tuple[BankRun, ...]:
+) -> tuple[BankPass, ...]:
     """Query each bank once for movements and once for its current balance.
 
     Both stages run for every bank, in the order the connectors were given: a
@@ -79,9 +79,9 @@ def collect_bank_runs(
         end_date: Last movement booking date to request, inclusive.
 
     Returns:
-        One `BankRun` per connector, in the same order as ``connectors``.
+        One `BankPass` per connector, in the same order as ``connectors``.
     """
-    runs: list[BankRun] = []
+    runs: list[BankPass] = []
     for connector in connectors:
         bank_name = connector.BANK_NAME
         transactions: tuple[Transaction, ...] = ()
@@ -109,7 +109,7 @@ def collect_bank_runs(
             _log_stage_failure(bank_name, "balance", exc)
 
         runs.append(
-            BankRun(
+            BankPass(
                 bank_name=bank_name,
                 transactions=transactions,
                 balance=balance,

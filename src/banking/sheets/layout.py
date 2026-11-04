@@ -18,9 +18,11 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
+from typing import Protocol
 
 import gspread
 
+from banking.connectors.enable_banking import Balance, Transaction
 from banking.sheets.writer import (
     CellValue,
     SheetsAccessError,
@@ -167,6 +169,71 @@ class AccountBalance:
     amount: Decimal | None
     currency: str = "EUR"
     reference_date: date | None = None
+
+
+class BankSource(Protocol):
+    """What the layout input mappers need from one bank's fetched data.
+
+    Any per-bank result object that carries these three attributes can be
+    mapped, whatever layer produced it; this keeps the mappers independent of
+    whether the caller fetched one month for the layout or one pass for the
+    daily job. The members are read-only properties so a frozen dataclass of
+    the calling layer satisfies the protocol.
+    """
+
+    @property
+    def bank_name(self) -> str: ...
+
+    @property
+    def transactions(self) -> Sequence[Transaction]: ...
+
+    @property
+    def balance(self) -> Balance | None: ...
+
+
+def expense_rows_from_banks(banks: Sequence[BankSource]) -> list[ExpenseRow]:
+    """The individual-expenses block: every transaction of every bank.
+
+    Args:
+        banks: The per-bank results, in the desired output order.
+
+    Returns:
+        One `ExpenseRow` per transaction, in bank order and then in the order
+        each bank reported its transactions.
+    """
+    return [
+        ExpenseRow(
+            booking_date=transaction.booking_date,
+            bank=bank.bank_name,
+            description=transaction.description,
+            amount=transaction.amount,
+        )
+        for bank in banks
+        for transaction in bank.transactions
+    ]
+
+
+def balances_from_banks(banks: Sequence[BankSource]) -> list[AccountBalance]:
+    """One balance row per bank, empty when the bank reported no balance.
+
+    Args:
+        banks: The per-bank results, in the desired output order.
+
+    Returns:
+        One `AccountBalance` per bank, in the same order as ``banks``. A bank
+        without a balance yields ``amount=None``, ``currency="EUR"`` and
+        ``reference_date=None``, so the cell stays empty instead of inventing
+        a zero.
+    """
+    return [
+        AccountBalance(
+            bank=bank.bank_name,
+            amount=bank.balance.amount if bank.balance is not None else None,
+            currency=bank.balance.currency if bank.balance is not None else "EUR",
+            reference_date=bank.balance.reference_date if bank.balance is not None else None,
+        )
+        for bank in banks
+    ]
 
 
 def _expense_row(transaction: ExpenseRow) -> list[CellValue]:
