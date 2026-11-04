@@ -117,6 +117,8 @@ jobs:
           echo "BANKING_EB_CONFIG_DIR=$RUNNER_TEMP/eb" >> "$GITHUB_ENV"
 
       # 3. El mismo comando que en local: el scheduler no tiene lógica propia.
+      #    `banking daily` hace en una sola pasada lo que antes hacían `sync` y
+      #    `layout`: pestaña cruda y pestaña de layout del mes en curso.
       #    `set +e` evita abortar antes de publicar el resumen, y PIPESTATUS[0]
       #    recupera el exit code del proceso (no el de tee).
       - name: Ejecutar sincronización
@@ -124,14 +126,14 @@ jobs:
         run: |
           set +e
           set -o pipefail
-          python -m banking sync 2>&1 | tee "$RUNNER_TEMP/sync-output.log"
+          python -m banking daily 2>&1 | tee "$RUNNER_TEMP/sync-output.log"
           code=${PIPESTATUS[0]}
           echo "exit_code=$code" >> "$GITHUB_OUTPUT"
           exit 0
 
       # 4. Resumen en la página de la ejecución. Se construye con la salida que
-      #    el propio proceso imprime (bancos, movimientos, fallos, duración),
-      #    sin lógica de CI dentro del código Python.
+      #    el propio proceso imprime (bancos, movimientos por pestaña, fallos y
+      #    duración), sin lógica de CI dentro del código Python.
       - name: Publicar resumen
         if: always()
         env:
@@ -139,6 +141,24 @@ jobs:
         run: |
           set -u
           log="$RUNNER_TEMP/sync-output.log"
+          # `banking daily` imprime una única línea de resumen que ya lleva los
+          # bancos sincronizados (X/Y), los movimientos escritos en la pestaña
+          # cruda, las filas escritas en la de layout y la duración. Se copia
+          # entera: re-parsear esa prosa sería frágil.
+          headline=$(grep -m1 -E '^Pasada diaria' "$log" 2>/dev/null || true)
+          headline=${headline:-"(el proceso no llegó a imprimir el resumen de la pasada)"}
+          # Los conteos salen de las líneas que `banking.daily` emite una vez por
+          # banco y etapa, así que también existen en el fallo total, donde el
+          # comando no imprime el reporte por banco:
+          #   "Daily pass stage failed: bank=<banco> stage=transactions reason=..."
+          #   "Daily pass skipped stage: bank=<banco> stage=transactions not onboarded ..."
+          # Cada banco aporta como mucho una de cada, de ahí que sean conteos.
+          without_session=$(grep -c -E 'Daily pass skipped stage: .*stage=transactions' "$log" 2>/dev/null || true)
+          without_session=${without_session:-0}
+          failed_banks=$(grep -c -E 'Daily pass stage failed: .*stage=transactions' "$log" 2>/dev/null || true)
+          failed_banks=${failed_banks:-0}
+          failed_balances=$(grep -c -E 'Daily pass stage failed: .*stage=balance' "$log" 2>/dev/null || true)
+          failed_balances=${failed_balances:-0}
           {
             echo "## Sincronización bancaria — $(date -u +%Y-%m-%d)"
             echo
@@ -150,10 +170,14 @@ jobs:
               echo "- **Estado**: fallo (el proceso no llegó a ejecutarse)"
             fi
             echo "- **Exit code**: ${EXIT_CODE:-desconocido}"
+            echo "- **Bancos sincronizados, movimientos por pestaña y duración**: $headline"
+            echo "- **Bancos sin sesión PSD2**: $without_session"
+            echo "- **Bancos con fallo**: $failed_banks"
+            echo "- **Saldos con fallo**: $failed_balances"
             echo
             if [ -s "$log" ]; then
               echo '```text'
-              grep -E '^(Sincronización|ERROR|  - )' "$log" || tail -n 20 "$log"
+              grep -E '^(Sincronización|Pasada diaria|  - |  Bancos sin sesión|ERROR)' "$log" || tail -n 20 "$log"
               echo '```'
             else
               echo "Sin resumen del proceso: la ejecución falló antes de arrancar."

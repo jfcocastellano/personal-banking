@@ -85,3 +85,13 @@ _(se completa al cerrar cada tarea: commit, gates y evidencia)_
 - El aviso solo se construye en los caminos de fallo (`EmailNotifier` reusable de `cli/sync.py`); `BankPass` se adapta a `BankOutcome` para el notificador, que sigue sin cambios.
 - Ronda de pulido: `handle` quedó con la firma de sus hermanos (`args: argparse.Namespace, notifier=None`); se borró el parser interno y el rechazo de flags se prueba ahora en `test_main` contra el parser real.
 - Decisión fuera del brief: el `tab_name` del correo es el de la pestaña cruda, y la etapa fallida viaja en `sheets_error`.
+
+### T005 — cerrada
+
+- Commit: `ci(sync): run the daily pass and report both tabs in the summary`.
+- RED observado: 3 tests en rojo, entre ellos `assert 'python -m banking daily' in ...python -m banking sync...`.
+- GREEN: 328 tests unitarios (327 + 1 nuevo), guardas de secretos intactas (5 passed), YAML válido, `ruff`/`format`/`mypy` limpios.
+- Paso de ejecución: `python -m banking daily 2>&1 | tee "$RUNNER_TEMP/sync-output.log"` con `PIPESTATUS[0]` sin cambios.
+- Resumen: la cabecera `Pasada diaria ...` se copia entera (no se re-parsea prosa) y aporta bancos X/Y, movimientos por pestaña y duración; tres `grep -c` aportan bancos sin sesión, bancos con fallo y saldos con fallo.
+- Acoplamiento aceptado y pinchado por test: los `grep` matchean las líneas de log de `banking.daily`; renombrarlas obliga a tocar `sync.yml`.
+- Limitación conocida: en el camino `NOTHING_TO_SYNC` la cabecera no trae conteos porque no se escribió nada; es el comportamiento del comando, no del resumen.
