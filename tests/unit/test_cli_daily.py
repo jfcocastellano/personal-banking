@@ -4,6 +4,7 @@
 test that reached a bank API, a real spreadsheet or SMTP would be a bug here.
 """
 
+import smtplib
 import subprocess
 import sys
 from datetime import date
@@ -145,6 +146,23 @@ def _mock_notifier(mocker: MockerFixture, status: DeliveryStatus = DeliveryStatu
     notifier = mocker.Mock(spec=EmailNotifier)
     notifier.notify_failure.return_value = status
     return notifier
+
+
+def _recording_notifier(mocker: MockerFixture) -> tuple[EmailNotifier, smtplib.SMTP]:
+    """Build the real notifier with a fake SMTP transport that records the message."""
+    values = {
+        "SMTP_HOST": "smtp.example.com",
+        "SMTP_PORT": "465",
+        "SMTP_USER": "bot@example.com",
+        "SMTP_PASSWORD": "app-password-1234",
+        "NOTIFY_EMAIL_TO": "owner@example.com",
+    }
+    store = mocker.Mock()
+    store.get.side_effect = values.__getitem__
+    smtp = mocker.Mock(spec=smtplib.SMTP)
+    notifier = EmailNotifier(store=store, smtp_factory=mocker.Mock(return_value=smtp))
+    mocker.spy(notifier, "notify_failure")
+    return notifier, smtp
 
 
 def _install_notifier(monkeypatch: pytest.MonkeyPatch, notifier: object) -> None:
@@ -454,3 +472,53 @@ def test_report_keeps_a_balance_failure_visible_without_failing_the_run(
     out = capsys.readouterr().out
     assert "FALLÓ la consulta de saldo" in out
     assert "quota exceeded" in out
+
+
+# --- the failure email never drops a balance failure -------------------------
+
+
+def test_email_names_a_balance_failure_of_a_succeeded_bank(
+    monkeypatch: pytest.MonkeyPatch,
+    mocker: MockerFixture,
+) -> None:
+    """A balance failure still counts as success, but the email must say so."""
+    summary = _summary(
+        OverallStatus.PARTIAL_FAILURE,
+        [
+            _pass(_BANK_A, transactions=(_transaction(),), balance_failure="quota exceeded"),
+            _pass(
+                _BANK_B,
+                transactions_failure="re-auth needed",
+                balance_failure="re-auth needed",
+            ),
+            _pass(_BANK_C, transactions=(_transaction("Café", "-3.00"),), balance=_balance()),
+        ],
+    )
+    monkeypatch.setattr(cli_daily, "run_daily", lambda: summary)
+    notifier, smtp = _recording_notifier(mocker)
+    _install_notifier(monkeypatch, notifier)
+
+    exit_code = cli_daily.handle(SimpleNamespace())
+
+    # The classification is unchanged: the balance failure does not move the
+    # run out of partial failure.
+    assert exit_code == 3
+    notifier.notify_failure.assert_called_once()
+    outcomes = {
+        outcome.bank_name: outcome
+        for outcome in notifier.notify_failure.call_args.kwargs["outcomes"]
+    }
+    balance_failed = outcomes[_BANK_A]
+    assert balance_failed.succeeded is True
+    assert balance_failed.failure_reason is not None
+    assert "saldo no disponible" in balance_failed.failure_reason
+    assert "quota exceeded" in balance_failed.failure_reason
+    # A clean bank still carries no reason, and a real failure keeps its own.
+    assert outcomes[_BANK_C].failure_reason is None
+    assert outcomes[_BANK_B].failure_reason == "re-auth needed"
+
+    # The rendered email is the end of the chain, not just the notifier payload.
+    body = smtp.send_message.call_args.args[0].get_content()
+    assert (
+        "  - ING España: 1 movimientos — saldo no disponible: quota exceeded" in body.splitlines()
+    )

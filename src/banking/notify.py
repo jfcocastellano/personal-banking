@@ -255,7 +255,10 @@ def _build_body(
     ]
     for outcome in outcomes:
         if outcome.succeeded:
-            lines.append(f"  - {outcome.bank_name}: {outcome.rows_written} movimientos")
+            line = f"  - {outcome.bank_name}: {outcome.rows_written} movimientos"
+            if outcome.failure_reason is not None:
+                line += f" — {outcome.failure_reason}"
+            lines.append(line)
         elif outcome.not_onboarded:
             lines.append(f"  - {outcome.bank_name}: SIN SESIÓN PSD2 — {outcome.failure_reason}")
         else:
