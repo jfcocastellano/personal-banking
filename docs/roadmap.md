@@ -26,6 +26,7 @@ IT1 (skeleton + CI)
         └── IT4 (pipeline ING → Sheets — MVP)
               └── IT6 (notificación email)
                     └── IT7 (scheduler GitHub Actions)
+                          └── IT8 (pasada diaria única)
 ```
 
 IT2 y IT3 son desarrollables en paralelo tras IT1.
@@ -452,3 +453,65 @@ IT5 solo necesita el patrón de IT2; IT6 necesita el pipeline de IT4.
   El objetivo es que el sistema opere de forma completamente autónoma
   sin ninguna acción diaria del propietario.
   ```
+
+---
+
+## Iteración 8: Pasada diaria única (crudo + layout)
+
+- **Valor entregado**: El workflow diario deja de escribir una sola
+  pestaña. Un único comando (`python -m banking daily`) consulta cada
+  banco una vez para movimientos y una vez para saldo, y escribe en la
+  misma corrida la pestaña cruda `<YYYY-MM>` y la pestaña de layout
+  `<YYYY-MM Gastos>`, refrescando además el resumen y el panel de saldos
+  (`J:K`) sin tocar el bloque manual `G:H`. `sync` y `layout` no cambian:
+  `layout --month` queda como el camino de backfill.
+
+  *(La pestaña de layout llegó en `specs/008-monthly-sheet-layout/` y su
+  propia guía la rotula IT8; no se registró como iteración acá.)*
+
+- **Definition of Done**:
+  - Comando `banking daily`, sin argumentos: el mes es siempre el de
+    ejecución (el backfill sigue en `layout --month`)
+  - Una sola lectura por banco y por etapa (movimientos + saldo), con
+    aislamiento entre bancos y entre etapas: un fallo de saldo no descarta
+    los movimientos ni viceversa
+  - Las dos pestañas escritas con el mismo conjunto de movimientos en una
+    sola corrida
+  - `J:K` refrescado en cada corrida; `G:H` intacto
+  - Códigos de salida de `sync` (`0`-`4`), incluido `0` cuando todos los
+    bancos están sin sesión PSD2, sin escribir ni borrar nada
+  - El workflow diario ejecuta `daily` y su resumen informa movimientos
+    por pestaña, bancos sin sesión, fallos y duración
+  - Suite, `ruff`, `ruff format --check` y `mypy` verdes; CI verde
+
+- **Dependencias**: IT5 + IT7
+
+- **Riesgos**:
+  - El saldo sigue siendo una foto del momento de la corrida: sin
+    histórico, el cierre de mes solo coincide si la corrida cae el último
+    día del mes
+  - Al cambiar de mes, la pestaña del mes anterior deja de actualizarse
+    con lo que tenía en su última corrida
+  - Las dos pestañas se escriben en dos llamadas separadas: un fallo entre
+    ambas deja el crudo actualizado y el layout viejo (exit `2`)
+
+---
+
+## Candidatas no comprometidas
+
+Ninguna de estas está aceptada todavía: no tienen alcance cerrado, ni
+orden, ni fecha. Están acá para no perderlas de vista.
+
+- **Snapshot diario de saldos (fecha × cuenta)**: una fila por cuenta y
+  por día, para tener histórico y cerrar el mes con el saldo real y no
+  con la foto de la última corrida. Es lo que resolvería también el mes
+  anterior que deja de actualizarse.
+- **Categorización automática de las 49 filas del catálogo**: hoy `G:H`
+  se llena a mano porque ninguna API informa la categoría; implicaría
+  reglas propias sobre la descripción del movimiento.
+- **Conector de N26**: la cuenta aparece en la hoja original y no tiene
+  conector; agregarlo es replicar el patrón de los otros cuatro (una clave
+  `ENABLE_BANKING_SESSION_ID_N26` y una clase, más su consentimiento PSD2).
+- **Atomicidad del writer**: las dos pestañas se escriben en dos llamadas
+  independientes, así que un fallo en el medio deja una actualizada y la
+  otra vieja. No hay transacción entre pestañas.

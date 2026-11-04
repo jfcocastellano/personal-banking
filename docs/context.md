@@ -30,7 +30,7 @@ El scheduler vive en `.github/workflows/sync.yml`, separado del pipeline de CI (
 
 - **Disparadores**: `schedule` con una única entrada `cron: "0 6 * * *"` (06:00 UTC ≈ 08:00 Madrid en verano) y `workflow_dispatch` sin parámetros. Ni `push` ni `pull_request` disparan la sincronización. La hora se cambia editando esa línea del cron, que es el único punto de configuración horaria; los workflows programados solo se ejecutan desde `main`.
 - **Ejecución**: job único `ubuntu-latest`, Python 3.12, `timeout-minutes: 10`, `permissions: contents: read` y `concurrency: banking-sync` con `cancel-in-progress: false` (serializa las ejecuciones para que nunca haya dos escrituras simultáneas en la misma pestaña).
-- **Sin lógica de CI en el código**: el workflow ejecuta `python -m banking sync`, el mismo comando que en local.
+- **Sin lógica de CI en el código**: el workflow ejecuta `python -m banking daily`, el mismo comando que en local.
 - **Configuración**: los 14 secretos de GitHub se validan como primer paso (fallo en menos de un minuto, nombrando el ausente y sin llamar a ninguna API, para no gastar la cuota PSD2 de 4 peticiones/cuenta/día) y se materializan en los dos mecanismos que usa el código: el `.env` cifrado del `SecretStore` (11 claves, vía `python -m banking secrets set`) y el fichero de firma RSA de Enable Banking (`eb-config.json` + PEM en `$RUNNER_TEMP`, fuera del workspace).
 - **Resultado**: el estado de la ejecución coincide con el exit code del proceso (`0`-`4`, ver tabla de notificaciones) y cada ejecución publica un resumen en su página con bancos procesados, movimientos escritos, fallos con su motivo y duración total.
 
@@ -75,17 +75,40 @@ Las credenciales sensibles (credenciales bancarias, tokens, contraseñas) se alm
 **Notificaciones**
 En caso de error, el sistema envía **un único email agregado** al propietario con el detalle del fallo: los bancos que fallaron con su motivo y los que sí se sincronizaron. No hay notificación en caso de éxito.
 
-El email se envía mediante Gmail SMTP (`smtplib` de la stdlib, sin dependencias nuevas) dentro del flujo de `python -m banking sync`, antes de devolver el código de salida. La configuración son cinco claves del `SecretStore`: `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD` (contraseña de aplicación de Gmail) y `NOTIFY_EMAIL_TO`. Si falta cualquiera de ellas, la notificación se omite con un `WARNING` y el código de salida del desenlace no cambia.
+El email se envía mediante Gmail SMTP (`smtplib` de la stdlib, sin dependencias nuevas) dentro del flujo de `python -m banking daily` y del de `python -m banking sync`, antes de devolver el código de salida. La configuración son cinco claves del `SecretStore`: `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD` (contraseña de aplicación de Gmail) y `NOTIFY_EMAIL_TO`. Si falta cualquiera de ellas, la notificación se omite con un `WARNING` y el código de salida del desenlace no cambia. Las reglas de envío son las mismas para los dos comandos: correo en fallo parcial, fallo total y fallo de escritura en Sheets; nunca en éxito completo ni cuando todos los bancos están sin sesión PSD2.
 
-Códigos de salida de `banking sync`:
+**Comandos**
+
+| Comando | Qué escribe | Argumentos |
+|---|---|---|
+| `python -m banking daily` | las dos pestañas del mes en curso (`YYYY-MM` cruda y `YYYY-MM Gastos` de layout) en una sola pasada | ninguno; el mes es siempre el de ejecución |
+| `python -m banking sync` | solo la pestaña cruda `YYYY-MM` | ninguno |
+| `python -m banking layout` | solo la pestaña `YYYY-MM Gastos` | `--month YYYY-MM` opcional |
+
+`banking daily` es la pasada diaria única (feature 016) y es lo que corre el scheduler de IT7 desde entonces: un solo proceso que consulta cada banco **una vez** para movimientos y **una vez** para saldo, y escribe las dos pestañas con ese mismo conjunto de movimientos. Esa es la decisión de arquitectura: no se encadenan `sync` y `layout`, porque entre los dos harían 3 peticiones por cuenta y dejarían el límite PSD2 de 4 peticiones por cuenta y día sin margen para un reintento. `sync` y `layout` siguen existiendo y no cambian: `sync` queda como corrida cruda suelta y `layout --month` como el camino de backfill de un mes concreto.
+
+Códigos de salida de `banking sync` y de `banking daily` (son idénticos):
 
 | Código | Significado |
 |---|---|
-| `0` | Ningún banco falló y la hoja quedó escrita (sin email). Incluye los bancos sin sesión PSD2, que se reportan aparte y no cuentan como fallo, y la corrida en la que ninguno tiene sesión, que no escribe nada (`Sincronización omitida`) |
+| `0` | Ningún banco falló y la hoja quedó escrita (sin email). Incluye los bancos sin sesión PSD2, que se reportan aparte y no cuentan como fallo, y la corrida en la que ninguno tiene sesión, que no escribe nada (`Sincronización omitida` / `Pasada diaria omitida`) |
 | `1` | Ningún banco que tenía que sincronizar lo logró — nada escrito; email enviado u omitido |
-| `2` | ≥1 banco exitoso pero falló la escritura en Google Sheets; email enviado u omitido |
+| `2` | ≥1 banco exitoso pero falló la escritura en Google Sheets (en `daily` el mensaje nombra la etapa: `raw` o `layout`); email enviado u omitido |
 | `3` | ≥1 banco exitoso y ≥1 fallo **real**, escritura correcta; email enviado u omitido |
 | `4` | **Fallo de entrega del email** (el resumen de la ejecución ya se imprimió) |
+
+`banking layout` **no** comparte esa tabla: tiene la suya, más corta y con otro significado, porque es una herramienta manual de backfill y no un proceso de sincronización.
+
+Códigos de salida de `banking layout`:
+
+| Código | Significado |
+|---|---|
+| `0` | Pestaña de layout escrita |
+| `1` | No se pudo escribir la pestaña (credenciales, permisos, cuota o más de 400 movimientos en el mes) |
+| `2` | `--month` inválido |
+| `3` | Ningún banco pudo leer movimientos: no se escribió nada, para no vaciar un mes existente |
+
+En los dos comandos un fallo de saldo **no** cambia el código de salida: se informa en la línea del banco y la fila de saldo de ese banco queda sin dato. Lo que decide el código es el resultado de los movimientos.
 
 ---
 

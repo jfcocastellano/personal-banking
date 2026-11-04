@@ -95,3 +95,13 @@ _(se completa al cerrar cada tarea: commit, gates y evidencia)_
 - Resumen: la cabecera `Pasada diaria ...` se copia entera (no se re-parsea prosa) y aporta bancos X/Y, movimientos por pestaña y duración; tres `grep -c` aportan bancos sin sesión, bancos con fallo y saldos con fallo.
 - Acoplamiento aceptado y pinchado por test: los `grep` matchean las líneas de log de `banking.daily`; renombrarlas obliga a tocar `sync.yml`.
 - Limitación conocida: en el camino `NOTHING_TO_SYNC` la cabecera no trae conteos porque no se escribió nada; es el comportamiento del comando, no del resumen.
+
+### T006 — cerrada
+
+- Commit: `docs(016): document the daily pass and its balance-panel consequences`.
+- Sin RED aplicable: documentación pasiva, sin comportamiento ejecutable nuevo; verificación por `grep`, resolución de links y suite intacta (328 passed).
+- `docs/context.md`: workflow que ejecuta `daily`, tabla de los tres comandos, tabla de exit codes compartida por `sync`/`daily` frente a la propia de `layout`, y la decisión de una sola lectura por banco por la cuota PSD2.
+- `specs/016-single-daily-pass/quickstart.md`: nuevo, con qué refresca cada corrida, qué sobrevive de `G:H`, la limitación de saldo sin histórico y el cambio de mes.
+- `quickstart.md` raíz: corregida la afirmación de que `J:K` se respeta, más una sección con el reemplazo de `sync` por `daily` en el workflow.
+- `docs/roadmap.md`: iteración 8 con Definition of Done, dependencias y riesgos; candidatas no comprometidas (snapshot de saldos, categorización, N26, atomicidad del writer) marcadas explícitamente como no aceptadas.
+- Fuera del brief, corregido por el padre: `specs/008-monthly-sheet-layout/quickstart.md` afirmaba que `J:K` se respeta, lo que T003 dejó falso.
