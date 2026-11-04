@@ -105,3 +105,9 @@ _(se completa al cerrar cada tarea: commit, gates y evidencia)_
 - `quickstart.md` raíz: corregida la afirmación de que `J:K` se respeta, más una sección con el reemplazo de `sync` por `daily` en el workflow.
 - `docs/roadmap.md`: iteración 8 con Definition of Done, dependencias y riesgos; candidatas no comprometidas (snapshot de saldos, categorización, N26, atomicidad del writer) marcadas explícitamente como no aceptadas.
 - Fuera del brief, corregido por el padre: `specs/008-monthly-sheet-layout/quickstart.md` afirmaba que `J:K` se respeta, lo que T003 dejó falso.
+
+### Correcciones post-verificación
+
+- `6ca4e23` `fix(daily): name balance failures in the email and align panel formatting`: el correo ahora nombra el fallo de saldo de un banco que sí trajo movimientos (viaja como `saldo no disponible: <motivo>` y `notify._build_body` lo renderiza; los correos de `sync` quedan byte-idénticos), la creación y el refresco del panel comparten una sola definición de rango (`_summary_panel_range_last_row`), y se corrigió un comentario obsoleto sobre el sufijo duplicado.
+- `docs(016): correct the PSD2 request accounting`: verificado en `enable_banking.py` que el conector resuelve la sesión con `GET /sessions/{session_id}` antes de **cada** etapa, así que una corrida son **4 GET por cuenta** más paginación, no 2. El margen frente al límite de 4/cuenta/día queda declarado **no verificado**. El argumento de la feature sobrevive mejorado: encadenar `sync` y `layout` habrían sido 6 GET y dos lecturas de movimientos.
+- Deuda declarada que queda abierta: resolver la sesión una vez por corrida ahorraría 2 de esos 4 GET (registrado en los riesgos de IT8, no como parte de esta iteración).

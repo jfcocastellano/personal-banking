@@ -494,6 +494,11 @@ IT5 solo necesita el patrón de IT2; IT6 necesita el pipeline de IT4.
     con lo que tenía en su última corrida
   - Las dos pestañas se escriben en dos llamadas separadas: un fallo entre
     ambas deja el crudo actualizado y el layout viejo (exit `2`)
+  - Cada corrida gasta 4 GET por cuenta más paginación, no 2: el conector
+    resuelve la sesión con `GET /sessions/{session_id}` antes de cada etapa
+    (movimientos y saldo). Resolver la sesión una sola vez por corrida
+    ahorraría 2 de esos 4 GET; queda como candidato, no como parte de esta
+    iteración
 
 ---
 
