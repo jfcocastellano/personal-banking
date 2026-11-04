@@ -8,8 +8,8 @@ spacer.
 ``build_month_grid`` is a pure function of plain data, so the geometry is
 testable without a network or a spreadsheet. ``LayoutWriter`` owns every
 Google Sheets concern: it creates the tab once and afterwards rewrites only
-the expense block, which is what lets hand-typed shared amounts survive a
-regeneration (FR-009).
+the expense block and the summary/balances panel, which is what lets
+hand-typed shared amounts survive a regeneration (FR-009).
 """
 
 import logging
@@ -128,6 +128,18 @@ _SUMMARY_TOTAL_ROW = _SUMMARY_FIRST_ROW + 2
 _BALANCE_TITLE_ROW = _SUMMARY_TOTAL_ROW + 2  # 8
 _BALANCE_HEADER_ROW = _BALANCE_TITLE_ROW + 1
 _BALANCE_FIRST_ROW = _BALANCE_HEADER_ROW + 1
+
+
+def _summary_panel_last_row(balance_count: int) -> int:
+    """Last row of the summary/balances panel for ``balance_count`` accounts."""
+    return _BALANCE_FIRST_ROW + balance_count + 1
+
+
+# Panel height the update path clears. Deliberately larger than the four
+# connectors, so a panel that shrank (an account removed, a bank offline)
+# leaves no stale row behind.
+_MAX_BALANCE_ROWS = 8
+_SUMMARY_PANEL_LAST_ROW = _summary_panel_last_row(_MAX_BALANCE_ROWS)  # 19
 
 _EXPENSE_REGION = f"B{_EXPENSE_FIRST_ROW}:E{_EXPENSE_LAST_ROW}"
 _AMOUNT_RANGE = f"$E${_EXPENSE_FIRST_ROW}:$E${_EXPENSE_LAST_ROW}"
@@ -430,11 +442,50 @@ def _write_expense_region(worksheet: gspread.Worksheet, transactions: Sequence[E
         raise _translate_api_error(exc) from exc
 
 
+def _write_summary_region(worksheet: gspread.Worksheet, balances: Sequence[AccountBalance]) -> None:
+    """Clear and rewrite only J:K, from the summary down to the reference date.
+
+    The same placement helpers as ``build_month_grid`` fill the region, so the
+    creation path and the daily refresh cannot drift apart. Columns A-I are
+    never addressed, which is what keeps ``G:H`` (hand-typed shared amounts) and
+    ``B:E`` (expenses) intact.
+
+    The write is USER_ENTERED because the summary cells are formulas and must
+    evaluate. The clear always reaches ``_SUMMARY_PANEL_LAST_ROW`` even when the
+    panel is shorter, so a dropped account leaves no stale row behind.
+    """
+    first_row = _SUMMARY_FIRST_ROW
+    last_row = max(_summary_panel_last_row(len(balances)), _SUMMARY_PANEL_LAST_ROW)
+
+    cells: dict[int, list[CellValue]] = {}
+
+    def place(row: int, column: int, value: CellValue) -> None:
+        line = cells.setdefault(row, [])
+        while len(line) <= column:
+            line.append(None)
+        line[column] = value
+
+    _place_summary(place)
+    _place_balances(place, balances)
+
+    grid: list[list[CellValue]] = []
+    for row in range(first_row, last_row + 1):
+        line = cells.get(row, [])
+        grid.append([line[column] if column < len(line) else None for column in (_COL_J, _COL_K)])
+
+    try:
+        worksheet.batch_clear([f"J{first_row}:K{last_row}"])
+        worksheet.update(values=grid, range_name=f"J{first_row}", raw=False)
+        worksheet.format(f"K{first_row}:K{last_row}", _MONEY_FORMAT)
+    except gspread.exceptions.APIError as exc:
+        raise _translate_api_error(exc) from exc
+
+
 def _merge_titles(worksheet: gspread.Worksheet) -> None:
     """Merge the three title ranges the layout contract declares.
 
-    Creation only: a merge is a structural property of the tab, and the update
-    path must not touch anything outside the expense region.
+    Creation only: a merge is a structural property of the tab, and neither the
+    expense region nor the summary panel re-merges anything on update.
     """
     try:
         for title_range in _TITLE_RANGES:
@@ -471,10 +522,11 @@ def _apply_light_formatting(worksheet: gspread.Worksheet, balance_count: int) ->
 class LayoutWriter:
     """Owns the ``<YYYY-MM> Gastos`` tab.
 
-    The tab is created once with the full grid; every later run clears and
-    rewrites only ``B4:E403``. The shared-expense catalogue, the summary and
-    the balances panel are therefore never touched again, which is what keeps
-    hand-typed amounts safe (FR-009).
+    The tab is created once with the full grid. Every later run clears and
+    rewrites ``B4:E403`` and the ``J:K`` summary/balances panel (so the balances
+    stay a fresh snapshot with the bank's reference date), and nothing else. The
+    shared-expense block ``G:H`` is therefore never touched again, which is what
+    keeps hand-typed amounts safe (FR-009).
     """
 
     def __init__(self, client: gspread.Client | None = None) -> None:
@@ -516,6 +568,7 @@ class LayoutWriter:
                 _apply_light_formatting(worksheet, balance_count=len(balances))
             else:
                 _write_expense_region(worksheet, transactions)
+                _write_summary_region(worksheet, balances)
         except (
             SheetsConfigError,
             SheetsAccessError,

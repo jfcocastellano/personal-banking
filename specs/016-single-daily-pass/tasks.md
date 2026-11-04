@@ -65,3 +65,13 @@ _(se completa al cerrar cada tarea: commit, gates y evidencia)_
 - Enabling edits: `sync._transform` pasa a `transaction_rows` (mismo cuerpo, un call site), y `sheets/layout.py` gana `layout_tab_name`, que ahora usan los dos caminos — se eliminó el `_LAYOUT_TAB_SUFFIX` duplicado del CLI.
 - Decisión fuera del brief: `DailySheetsError.stage` es `Literal["raw", "layout"]`; el fallo al resolver `GOOGLE_SHEET_ID` cae en `stage="raw"`, igual que en `run_sync`.
 - Deuda declarada: `daily._total_failure_message` re-implementa el texto de `sync` (el original está tipado para `BankOutcome`); si cambia uno hay que cambiar el otro.
+
+### T003 — cerrada
+
+- Commit: `fix(layout): refresh the summary and balance panel on an existing tab`.
+- RED observado: 9 tests en rojo contra la implementación previa (`cleared == ['B4:E403', 'B4:E403']` frente a la lista con `J4:K19`, `panel_ranges == []`).
+- GREEN: 310 tests unitarios; `ruff check`, `ruff format --check` y `mypy src` limpios.
+- Región del panel: con N saldos, limpia `J4:Kmax(11+N, 19)`, escribe en `J4` con `USER_ENTERED` y formatea `K4:K<última>`. Nunca direcciona columnas A–I.
+- Suelo fijo `_MAX_BALANCE_ROWS = 8`: un panel que se achica (cuenta dada de baja, banco sin sesión) no deja filas viejas.
+- Test que cambió de contrato: `test_second_run_clears_only_the_expense_region_and_writes_only_expense_rows` pasa a `..._and_the_panel`; la supervivencia ahora se afirma sobre `G`/`H` (que ningún rango los mencione) en vez de sobre una celda de `J:K`, porque FR-004 reemplaza lo tipeado a mano en el panel.
+- Deuda declarada: la creación formatea `K10:K<total>` y el refresco `K4:K<última>`, así que tras la primera pasada los totales de fórmula del resumen quedan con formato de euros. Cosmético y benigno; unificarlo requiere tocar `_apply_light_formatting` y su test.
