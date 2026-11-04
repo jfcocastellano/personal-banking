@@ -54,10 +54,13 @@ Dos pestañas por mes, en una sola corrida y desde la misma lectura:
 | `2026-11` | un movimiento por fila, ordenado por fecha y banco (`Fecha de liquidación, Banco, Descripción, Importe, Divisa`) |
 | `2026-11 Gastos` | el mismo conjunto de movimientos como gastos individuales, más el resumen y el panel de saldos |
 
-Cada banco se consulta **dos veces y no más**: una para movimientos del día 1 a hoy, una para el
-saldo. Eso deja margen dentro del límite PSD2 de 4 peticiones por cuenta y día para un reintento
-manual. Encadenar `banking sync` y `banking layout` gastaría 3 y no dejaría margen; por eso la
-pasada diaria es un proceso único.
+Cada banco hace **dos llamadas de datos**: una para movimientos del día 1 a hoy, una para el
+saldo. El conector, además, resuelve la sesión con `GET /sessions/{session_id}` antes de cada
+etapa, así que en HTTP son **4 GET por cuenta** más paginación. El margen frente al límite PSD2 de
+4 peticiones por cuenta y día **no está verificado**, porque no está claro si Enable Banking cuenta
+la consulta de sesión contra ese límite. Encadenar `banking sync` y `banking layout` habría sido 6
+GET por cuenta y habría leído los movimientos dos veces; por eso la pasada diaria es un proceso
+único.
 
 ---
 

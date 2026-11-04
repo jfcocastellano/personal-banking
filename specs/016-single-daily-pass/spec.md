@@ -19,11 +19,11 @@ Tres consecuencias verificadas:
 
 1. **La pestaña de layout envejece.** Nada la actualiza a diario. Es el síntoma reportado por el usuario.
 2. **El panel de saldos nunca se refresca.** `LayoutWriter`, cuando la pestaña ya existe, reescribe solo `B4:E403` (`src/banking/sheets/layout.py:435`). Las celdas `J:K` (resumen + saldos) quedaron con los valores del día en que se creó la pestaña, y `G:H` es manual a propósito.
-3. **Encadenar los dos comandos duplicaría consultas.** `sync` hace 1 request por cuenta (`fetch_transactions`) y `layout` hace 2 (`fetch_transactions` + `fetch_balance`). Correr ambos son 3 requests por cuenta contra un límite PSD2 de 4 por cuenta y día, sin margen para reintentos.
+3. **Encadenar los dos comandos duplicaría consultas.** `sync` hace 1 llamada de datos por cuenta (`fetch_transactions`) y `layout` hace 2 (`fetch_transactions` + `fetch_balance`), pero el conector resuelve la sesión con un `GET /sessions/{session_id}` antes de cada etapa: son 2 GET para `sync` y 4 para `layout`. Correr ambos serían **6 GET por cuenta**, el doble que la pasada diaria, y además leería los movimientos dos veces.
 
 ## Decisión de producto (aprobada 2026-11-04)
 
-- Comando nuevo `banking daily`: una sola pasada que consulta Enable Banking **una vez por cuenta** y escribe **las dos pestañas**. `sync` y `layout` **no cambian**: `layout` queda como herramienta de backfill manual.
+- Comando nuevo `banking daily`: una sola pasada que consulta Enable Banking **una vez por etapa** (movimientos y saldo) y escribe **las dos pestañas**. `sync` y `layout` **no cambian**: `layout` queda como herramienta de backfill manual.
 - El panel de saldos (`J:K`) se refresca **siempre**, mostrando el saldo del momento de la corrida con la fecha de referencia que informa el banco.
 
 ## User Scenarios & Testing *(mandatory)*
@@ -112,7 +112,7 @@ El propietario recibe un correo cuando un banco falla de verdad, y no lo recibe 
 ### Measurable Outcomes
 
 - **SC-001**: Tras una corrida diaria, ambas pestañas del mes en curso contienen exactamente los mismos movimientos, contados como filas.
-- **SC-002**: Cada cuenta recibe 2 requests por corrida diaria (movimientos + saldo), medido en los tests con dobles de los conectores.
+- **SC-002**: Cada cuenta recibe 2 llamadas de datos por corrida diaria (movimientos + saldo), una por etapa, medido en los tests con dobles de los conectores; el conector resuelve la sesión antes de cada una, así que en HTTP son 4 GET por cuenta más paginación.
 - **SC-003**: El panel de saldos de una pestaña existente cambia tras una corrida con saldos distintos, y las celdas `G4:H52` no cambian.
 - **SC-004**: Con todos los bancos sin sesión, el número de escrituras a Sheets es 0.
 - **SC-005**: La suite completa, `ruff check`, `ruff format --check` y `mypy src` quedan verdes con los tests nuevos.
@@ -120,6 +120,6 @@ El propietario recibe un correo cuando un banco falla de verdad, y no lo recibe 
 ## Assumptions
 
 - El mes que escribe la pasada diaria es el mes de la fecha de ejecución; no hay parámetro de mes en `daily` (para backfills se usa `layout`).
-- El límite PSD2 de 4 requests por cuenta y día sigue vigente; la pasada diaria usa 2 y deja margen para un reintento manual.
+- El límite PSD2 de 4 requests por cuenta y día sigue vigente. La pasada diaria hace 2 llamadas de datos y 2 consultas de sesión por cuenta, es decir 4 GET más paginación; el margen frente al límite **no está verificado**, porque no está claro si Enable Banking cuenta la consulta de sesión contra ese límite. Una sola pasada sigue siendo la mitad de llamadas que encadenar `sync` y `layout` (6 GET), y reutilizar los movimientos evita una segunda lectura de datos.
 - `G:H` sigue siendo manual; esta feature no introduce categorización automática.
 - El snapshot diario de saldos (histórico fecha × cuenta) es una feature posterior y no se implementa acá.

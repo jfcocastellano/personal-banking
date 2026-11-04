@@ -4,7 +4,7 @@
 
 ## Summary
 
-Agregar un comando `banking daily` que hace en una sola pasada lo que hoy hacen dos procesos separados: consulta Enable Banking una vez por cuenta (movimientos + saldo), escribe la pestaña cruda `YYYY-MM` con `SheetsWriter` y la pestaña `YYYY-MM Gastos` con `LayoutWriter`, y refresca el panel de saldos/resumen de la pestaña de layout existente sin tocar `G:H`.
+Agregar un comando `banking daily` que hace en una sola pasada lo que hoy hacen dos procesos separados: consulta Enable Banking una vez por etapa (movimientos + saldo), escribe la pestaña cruda `YYYY-MM` con `SheetsWriter` y la pestaña `YYYY-MM Gastos` con `LayoutWriter`, y refresca el panel de saldos/resumen de la pestaña de layout existente sin tocar `G:H`.
 
 `sync` y `layout` no cambian. El workflow diario pasa a ejecutar `daily`.
 
@@ -23,7 +23,7 @@ Agregar un comando `banking daily` que hace en una sola pasada lo que hoy hacen 
 **Project Type**: CLI batch / integración de datos.
 
 **Constraints**:
-- 2 requests PSD2 por cuenta y corrida (límite 4/cuenta/día).
+- 2 llamadas de datos PSD2 por cuenta y corrida (movimientos + saldo); el conector resuelve la sesión antes de cada una, así que son 4 GET por cuenta más paginación. El margen frente al límite de 4/cuenta/día no está verificado: no está claro si Enable Banking cuenta la consulta de sesión contra ese límite.
 - Sin lógica de negocio en el YAML del workflow.
 - Toda función pública con anotaciones completas y `mypy` estricto (Principio VI).
 
