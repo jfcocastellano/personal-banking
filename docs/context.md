@@ -2,7 +2,7 @@
 
 > **Fuente de verdad del proyecto.** Este documento debe mantenerse actualizado ante cualquier cambio de requisitos, stack o decisiones de diseño.
 >
-> Última actualización: 2026-10-17
+> Última actualización: 2026-11-04
 
 ---
 
@@ -18,7 +18,7 @@ Las secciones 1–5 describen el **contrato objetivo** del proyecto. No hay que 
 | IT4 | Pipeline ING → Sheets (MVP) | Implementada |
 | IT5 | Multi-banco con resiliencia parcial | Implementada |
 | IT6 | Notificación de errores por email | Implementada |
-| IT7 | Scheduler en GitHub Actions | Implementada |
+| IT7 | Scheduler en GitHub Actions | Implementada (2026-10-17) |
 
 Las siete iteraciones del roadmap están implementadas: el scheduler automático (UC1), el disparo manual vía `workflow_dispatch` (UC2) y la notificación por email ante fallo (UC3) viven ya en el repositorio. La planificación vive en `docs/roadmap.md`.
 

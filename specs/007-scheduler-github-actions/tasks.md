@@ -34,8 +34,8 @@ hacer lo mismo y el cargador de los tests DEBE normalizar ambas formas.
 **Propósito**: Confirmar que no hay dependencias nuevas y cerrar la única rendija por
 la que una credencial podría acabar versionada sin querer.
 
-- [ ] T001 [P] Confirmar que no hace falta pinear nada: los tests del workflow solo usarán `pyyaml` (ya en `requirements-dev.txt` con `pyyaml==6.0.3`, usado por `tests/unit/test_ci_config.py` desde IT1) y `pytest`; `requirements.txt`, `requirements-dev.txt` y `[project].dependencies` de `pyproject.toml` quedan **sin cambios** y `tests/unit/test_dependencies.py` sigue pasando (Anti-patrón #10, Principio VII)
-- [ ] T002 [P] Añadir `*.pem` a `.gitignore` (sección `# Secrets`, junto a `.env` / `.env.*`), de forma que la clave RSA privada de Enable Banking no pueda commitearse por accidente desde una ruta local — la materialización en el runner usa `$RUNNER_TEMP`, fuera del workspace (FR-004, Principio IV)
+- [x] T001 [P] Confirmar que no hace falta pinear nada: los tests del workflow solo usarán `pyyaml` (ya en `requirements-dev.txt` con `pyyaml==6.0.3`, usado por `tests/unit/test_ci_config.py` desde IT1) y `pytest`; `requirements.txt`, `requirements-dev.txt` y `[project].dependencies` de `pyproject.toml` quedan **sin cambios** y `tests/unit/test_dependencies.py` sigue pasando (Anti-patrón #10, Principio VII)
+- [x] T002 [P] Añadir `*.pem` a `.gitignore` (sección `# Secrets`, junto a `.env` / `.env.*`), de forma que la clave RSA privada de Enable Banking no pueda commitearse por accidente desde una ruta local — la materialización en el runner usa `$RUNNER_TEMP`, fuera del workspace (FR-004, Principio IV)
 
 **Checkpoint**: Cero dependencias nuevas; el `.gitignore` cubre las tres formas de
 credencial que la iteración manipula (`.env`, `.env.*`, `*.pem`).
@@ -54,8 +54,8 @@ esté completa.
 
 ### Tests para Foundational ⚠️ OBLIGATORIO — escribir primero, verificar ROJO antes de T009
 
-- [ ] T003 [P] Crear `tests/unit/test_workflow_secret_guards.py` con guardas sobre todos los workflows: (1) ningún `${{ secrets.* }}` aparece dentro de un bloque `run:` (FR-010 — un secreto interpolado en `run:` se expande antes del enmascarado del log), (2) ningún fichero de `.github/workflows/*.yml` contiene formas de credencial literal (`-----BEGIN`, `Bearer `, `password=`, `enc:`, `private_key`) (Principio IV), (3) `.gitignore` ignora `.env`, `.env.*` y `*.pem`, (4) `ci.yml` **no** se ha modificado en sus disparadores (sigue con `push` y `pull_request` a `main`) ni en sus cinco gates (`pip-audit`, `ruff check`, `ruff format`, `mypy`, `pytest`) — FR-011; los puntos (2)-(4) son guardas que pasan desde el inicio (se documenta así, sin fingir un Red) y el punto (1) se vuelve efectivo al crear el workflow en T010
-- [ ] T004 [P] Crear `tests/unit/test_sync_workflow.py` con el cargador y las primeras aserciones de existencia: `SYNC_WORKFLOW = Path(".github/workflows/sync.yml")`, helper `_load_workflow() -> dict[str, Any]` que normaliza la clave `on` (acepta la forma booleana `True` que PyYAML produce con `on:` sin comillas), `test_workflow_file_exists` y `test_workflow_is_valid_yaml` (FR-001) — **deben fallar** en este punto porque `.github/workflows/sync.yml` todavía no existe
+- [x] T003 [P] Crear `tests/unit/test_workflow_secret_guards.py` con guardas sobre todos los workflows: (1) ningún `${{ secrets.* }}` aparece dentro de un bloque `run:` (FR-010 — un secreto interpolado en `run:` se expande antes del enmascarado del log), (2) ningún fichero de `.github/workflows/*.yml` contiene formas de credencial literal (`-----BEGIN`, `Bearer `, `password=`, `enc:`, `private_key`) (Principio IV), (3) `.gitignore` ignora `.env`, `.env.*` y `*.pem`, (4) `ci.yml` **no** se ha modificado en sus disparadores (sigue con `push` y `pull_request` a `main`) ni en sus cinco gates (`pip-audit`, `ruff check`, `ruff format`, `mypy`, `pytest`) — FR-011; los puntos (2)-(4) son guardas que pasan desde el inicio (se documenta así, sin fingir un Red) y el punto (1) se vuelve efectivo al crear el workflow en T010
+- [x] T004 [P] Crear `tests/unit/test_sync_workflow.py` con el cargador y las primeras aserciones de existencia: `SYNC_WORKFLOW = Path(".github/workflows/sync.yml")`, helper `_load_workflow() -> dict[str, Any]` que normaliza la clave `on` (acepta la forma booleana `True` que PyYAML produce con `on:` sin comillas), `test_workflow_file_exists` y `test_workflow_is_valid_yaml` (FR-001) — **deben fallar** en este punto porque `.github/workflows/sync.yml` todavía no existe
 
 **Checkpoint**: T001-T004 ejecutados. `test_sync_workflow.py` falla en rojo por
 ausencia del workflow; las guardas de `test_workflow_secret_guards.py` están activas.
@@ -76,16 +76,16 @@ minuto nombrando el secreto ausente y sin llamadas a las APIs bancarias.
 
 ### Tests para US1 ⚠️ OBLIGATORIO — escribir primero, verificar ROJO antes de T009
 
-- [ ] T005 [US1] Añadir a `tests/unit/test_sync_workflow.py` los tests de disparador (FR-001, FR-011): `schedule` contiene exactamente una expresión cron diaria (regex `^\d{1,2} \d{1,2} \* \* \*$`) y el conjunto de claves de `on` está contenido en `{"schedule", "workflow_dispatch"}` — sin `push`, `pull_request`, `release`, `workflow_run` ni `repository_dispatch`
-- [ ] T006 [US1] Añadir a `tests/unit/test_sync_workflow.py` los tests del job (FR-005, Decisión 11): un único job con `runs-on: ubuntu-latest`, `timeout-minutes: 10`, `actions/checkout@v4`, `actions/setup-python@v5` con `python-version: "3.12"`, e instalación de dependencias con `pip install -r requirements.txt`, `pip install -e .` y `pip-audit -r requirements.txt` (y **sin** `requirements-dev.txt`)
-- [ ] T007 [US1] Añadir a `tests/unit/test_sync_workflow.py` los tests de configuración (FR-004, FR-009, Decisión 3): los 14 nombres de `contracts/sync-workflow.md` § 4.2 aparecen en `env:` de job o de paso; el paso de validación precede al de sincronización y falla con exit code ≠ 0 si falta alguno (sin imprimir valores); el de aprovisionamiento invoca `python -m banking secrets set`, escribe en `$RUNNER_TEMP`, fija `BANKING_EB_CONFIG_DIR`, genera `eb-config.json` con `app_id` y `private_key_path`, y da permisos `600` al PEM
-- [ ] T008 [US1] Añadir a `tests/unit/test_sync_workflow.py` los tests de ejecución y propagación (FR-003, FR-007, Decisión 5): el paso de sincronización ejecuta `python -m banking sync` con `2>&1 | tee` a un log, usa `PIPESTATUS[0]` y escribe `exit_code=…` en `$GITHUB_OUTPUT`, y el último paso del job termina con `exit` sobre `steps.<id>.outputs.exit_code`
+- [x] T005 [US1] Añadir a `tests/unit/test_sync_workflow.py` los tests de disparador (FR-001, FR-011): `schedule` contiene exactamente una expresión cron diaria (regex `^\d{1,2} \d{1,2} \* \* \*$`) y el conjunto de claves de `on` está contenido en `{"schedule", "workflow_dispatch"}` — sin `push`, `pull_request`, `release`, `workflow_run` ni `repository_dispatch`
+- [x] T006 [US1] Añadir a `tests/unit/test_sync_workflow.py` los tests del job (FR-005, Decisión 11): un único job con `runs-on: ubuntu-latest`, `timeout-minutes: 10`, `actions/checkout@v4`, `actions/setup-python@v5` con `python-version: "3.12"`, e instalación de dependencias con `pip install -r requirements.txt`, `pip install -e .` y `pip-audit -r requirements.txt` (y **sin** `requirements-dev.txt`)
+- [x] T007 [US1] Añadir a `tests/unit/test_sync_workflow.py` los tests de configuración (FR-004, FR-009, Decisión 3): los 14 nombres de `contracts/sync-workflow.md` § 4.2 aparecen en `env:` de job o de paso; el paso de validación precede al de sincronización y falla con exit code ≠ 0 si falta alguno (sin imprimir valores); el de aprovisionamiento invoca `python -m banking secrets set`, escribe en `$RUNNER_TEMP`, fija `BANKING_EB_CONFIG_DIR`, genera `eb-config.json` con `app_id` y `private_key_path`, y da permisos `600` al PEM
+- [x] T008 [US1] Añadir a `tests/unit/test_sync_workflow.py` los tests de ejecución y propagación (FR-003, FR-007, Decisión 5): el paso de sincronización ejecuta `python -m banking sync` con `2>&1 | tee` a un log, usa `PIPESTATUS[0]` y escribe `exit_code=…` en `$GITHUB_OUTPUT`, y el último paso del job termina con `exit` sobre `steps.<id>.outputs.exit_code`
 
 ### Implementación para US1
 
-- [ ] T009 [US1] Crear `.github/workflows/sync.yml` con `name: Sync diaria`, `"on":` entrecomillado con `schedule: - cron: "0 6 * * *"` (comentario con la equivalencia en hora de Madrid y la nota de que es el único punto a tocar para cambiar la hora), y el job `sync` con `runs-on: ubuntu-latest`, `timeout-minutes: 10`, `permissions: contents: read`, más los pasos `Checkout`, `Preparar Python` e `Instalar dependencias` (T005, T006 en verde)
-- [ ] T010 [US1] Añadir a `.github/workflows/sync.yml` el bloque `env:` con los 14 secretos referenciados como `${{ secrets.<NOMBRE> }}`, el paso `Validar configuración` (bash que recorre los nombres, lista los que faltan y termina con exit code 1 sin llegar a red) y el paso `Provisionar configuración` (11 llamadas a `python -m banking secrets set` con `BANKING_MASTER_KEY` en el entorno, `mkdir -p "$RUNNER_TEMP/eb"`, escritura de `eb-config.json` + `private_key.pem`, `chmod 600`, `BANKING_EB_CONFIG_DIR` exportado a `$GITHUB_ENV`) — T007 y la guarda (1) de T003 en verde
-- [ ] T011 [US1] Añadir a `.github/workflows/sync.yml` el paso `Ejecutar sincronización` (`set +e`, `set -o pipefail`, `python -m banking sync 2>&1 | tee "$RUNNER_TEMP/sync-output.log"`, `code=${PIPESTATUS[0]}`, `echo "exit_code=$code" >> "$GITHUB_OUTPUT"`, `exit 0` para no abortar antes del resumen) y el paso final `Propagar resultado` (`exit ${{ steps.sync.outputs.exit_code }}`) — T008 en verde
+- [x] T009 [US1] Crear `.github/workflows/sync.yml` con `name: Sync diaria`, `"on":` entrecomillado con `schedule: - cron: "0 6 * * *"` (comentario con la equivalencia en hora de Madrid y la nota de que es el único punto a tocar para cambiar la hora), y el job `sync` con `runs-on: ubuntu-latest`, `timeout-minutes: 10`, `permissions: contents: read`, más los pasos `Checkout`, `Preparar Python` e `Instalar dependencias` (T005, T006 en verde)
+- [x] T010 [US1] Añadir a `.github/workflows/sync.yml` el bloque `env:` con los 14 secretos referenciados como `${{ secrets.<NOMBRE> }}`, el paso `Validar configuración` (bash que recorre los nombres, lista los que faltan y termina con exit code 1 sin llegar a red) y el paso `Provisionar configuración` (11 llamadas a `python -m banking secrets set` con `BANKING_MASTER_KEY` en el entorno, `mkdir -p "$RUNNER_TEMP/eb"`, escritura de `eb-config.json` + `private_key.pem`, `chmod 600`, `BANKING_EB_CONFIG_DIR` exportado a `$GITHUB_ENV`) — T007 y la guarda (1) de T003 en verde
+- [x] T011 [US1] Añadir a `.github/workflows/sync.yml` el paso `Ejecutar sincronización` (`set +e`, `set -o pipefail`, `python -m banking sync 2>&1 | tee "$RUNNER_TEMP/sync-output.log"`, `code=${PIPESTATUS[0]}`, `echo "exit_code=$code" >> "$GITHUB_OUTPUT"`, `exit 0` para no abortar antes del resumen) y el paso final `Propagar resultado` (`exit ${{ steps.sync.outputs.exit_code }}`) — T008 en verde
 
 **Checkpoint**: US1 completo. El workflow dispara a diario, valida y provisiona
 secretos, ejecuta el mismo comando que en local y marca la ejecución como fallida
@@ -104,11 +104,11 @@ seguidas se serializan (una espera a la otra).
 
 ### Tests para US2 ⚠️ OBLIGATORIO — escribir primero, verificar ROJO antes de T013
 
-- [ ] T012 [US2] Añadir a `tests/unit/test_sync_workflow.py` los tests de US2 (FR-002, FR-008): `workflow_dispatch` existe y no declara `inputs`; el job declara `concurrency` con `group: banking-sync` y `cancel-in-progress: false`
+- [x] T012 [US2] Añadir a `tests/unit/test_sync_workflow.py` los tests de US2 (FR-002, FR-008): `workflow_dispatch` existe y no declara `inputs`; el job declara `concurrency` con `group: banking-sync` y `cancel-in-progress: false`
 
 ### Implementación para US2
 
-- [ ] T013 [US2] Añadir a `.github/workflows/sync.yml` el disparador `workflow_dispatch:` (sin `inputs`) y el bloque `concurrency: {group: banking-sync, cancel-in-progress: false}` a nivel de job, con un comentario que explique por qué no se cancela (una escritura interrumpida dejaría la pestaña incompleta) — T012 en verde
+- [x] T013 [US2] Añadir a `.github/workflows/sync.yml` el disparador `workflow_dispatch:` (sin `inputs`) y el bloque `concurrency: {group: banking-sync, cancel-in-progress: false}` a nivel de job, con un comentario que explique por qué no se cancela (una escritura interrumpida dejaría la pestaña incompleta) — T012 en verde
 
 **Checkpoint**: US2 completo. La ejecución manual replica la programada y el grupo de
 concurrencia impide escrituras simultáneas sobre la misma pestaña.
@@ -126,11 +126,11 @@ lo dice y remite a los logs.
 
 ### Tests para US3 ⚠️ OBLIGATORIO — escribir primero, verificar ROJO antes de T015
 
-- [ ] T014 [US3] Añadir a `tests/unit/test_sync_workflow.py` los tests del resumen (FR-006, Decisión 4): existe un paso con `if: always()` que escribe en `$GITHUB_STEP_SUMMARY`; su script incluye el estado y el `exit_code` del paso de sincronización; filtra las líneas de resumen del log (`Sincronización`, `  - `) en lugar de volcar el log completo; y contempla el caso sin salida (fallo de arranque) con una nota explícita; además el paso de resumen se ejecuta **antes** del de propagación del exit code
+- [x] T014 [US3] Añadir a `tests/unit/test_sync_workflow.py` los tests del resumen (FR-006, Decisión 4): existe un paso con `if: always()` que escribe en `$GITHUB_STEP_SUMMARY`; su script incluye el estado y el `exit_code` del paso de sincronización; filtra las líneas de resumen del log (`Sincronización`, `  - `) en lugar de volcar el log completo; y contempla el caso sin salida (fallo de arranque) con una nota explícita; además el paso de resumen se ejecuta **antes** del de propagación del exit code
 
 ### Implementación para US3
 
-- [ ] T015 [US3] Añadir a `.github/workflows/sync.yml` el paso `Publicar resumen` (`if: always()`, `env: EXIT_CODE: ${{ steps.sync.outputs.exit_code }}`) que escribe en `$GITHUB_STEP_SUMMARY` un encabezado (`## Sincronización bancaria — <fecha>`, estado legible, exit code) y, en bloque de código, las líneas del log que empiezan por `Sincronización`, `ERROR` o `  - `, con la nota de degradación cuando el log no existe o está vacío — T014 en verde
+- [x] T015 [US3] Añadir a `.github/workflows/sync.yml` el paso `Publicar resumen` (`if: always()`, `env: EXIT_CODE: ${{ steps.sync.outputs.exit_code }}`) que escribe en `$GITHUB_STEP_SUMMARY` un encabezado (`## Sincronización bancaria — <fecha>`, estado legible, exit code) y, en bloque de código, las líneas del log que empiezan por `Sincronización`, `ERROR` o `  - `, con la nota de degradación cuando el log no existe o está vacío — T014 en verde
 
 **Checkpoint**: Las tres historias completas. El workflow cumple las 14 invariantes de
 `contracts/sync-workflow.md` § 6.
@@ -142,14 +142,42 @@ lo dice y remite a los logs.
 **Propósito**: Alinear la documentación de proyecto, pasar todos los gates de calidad,
 auditar seguridad y cerrar la iteración con la ejecución real que exige el roadmap.
 
-- [ ] T016 [P] Actualizar `docs/context.md`: marcar IT7 como **Implementada** en la tabla de iteraciones (con la fecha), y añadir una sección `Despliegue y operación` que describa el workflow (disparadores, hora, `concurrency`, `timeout-minutes: 10`, resumen publicado), el inventario resumido de los 14 secretos de GitHub y el enlace a `specs/007-scheduler-github-actions/quickstart.md` para los runbooks de rotación y de re-autorización PSD2 (FR-012)
-- [ ] T017 [P] Añadir a `quickstart.md` (raíz) la sección **IT7 — ejecución automática diaria**: alta de los 14 secretos con `gh secret set`, comprobación con `gh secret list`, primera ejecución real con `gh workflow run sync.yml`, cómo cambiar la hora (una línea del cron) y puntero a los runbooks de PSD2/rotación; incluir la advertencia de que el cron solo se ejecuta desde `main`
-- [ ] T018 [P] Actualizar `specs/007-scheduler-github-actions/plan.md`: sustituir el bloque `➡️ Siguiente paso` por `/speckit-implement` sobre `tasks.md` y añadir `tasks.md` al árbol de documentación de la funcionalidad (Principio I)
-- [ ] T019 Ejecutar y dejar en verde la batería completa: `pytest tests/` (148 tests previos + los nuevos, sin regresiones), `ruff check src/ tests/`, `ruff format --check src/ tests/`, `mypy src/` y `pip-audit` sobre el entorno — cero avisos, cero errores (Principio VI)
-- [ ] T020 Auditoría de seguridad y anti-patrones: `git grep` de formas de credencial (`-----BEGIN`, `Bearer `, `password`, `enc:` real, `session_id` completo) sobre todo el repositorio incluido `.github/workflows/` (debe salir limpio salvo placeholders de `.env.example`), confirmar que ningún test nuevo hace red ni depende de GitHub (Principio III), y que no se ha añadido ningún `print()` en módulos de núcleo (Anti-patrón #6)
-- [ ] T021 Verificar la trazabilidad contrato → test: para cada una de las 14 invariantes de `contracts/sync-workflow.md` § 6 existe un test con nombre explícito en `tests/unit/test_sync_workflow.py` o `tests/unit/test_workflow_secret_guards.py`, y los 14 nombres de secreto coinciden exactamente en workflow, tests, `quickstart.md` y `data-model.md` (FR-004, FR-013)
+- [x] T016 [P] Actualizar `docs/context.md`: marcar IT7 como **Implementada** en la tabla de iteraciones (con la fecha), y añadir una sección `Despliegue y operación` que describa el workflow (disparadores, hora, `concurrency`, `timeout-minutes: 10`, resumen publicado), el inventario resumido de los 14 secretos de GitHub y el enlace a `specs/007-scheduler-github-actions/quickstart.md` para los runbooks de rotación y de re-autorización PSD2 (FR-012)
+- [x] T017 [P] Añadir a `quickstart.md` (raíz) la sección **IT7 — ejecución automática diaria**: alta de los 14 secretos con `gh secret set`, comprobación con `gh secret list`, primera ejecución real con `gh workflow run sync.yml`, cómo cambiar la hora (una línea del cron) y puntero a los runbooks de PSD2/rotación; incluir la advertencia de que el cron solo se ejecuta desde `main`
+- [x] T018 [P] Actualizar `specs/007-scheduler-github-actions/plan.md`: sustituir el bloque `➡️ Siguiente paso` por `/speckit-implement` sobre `tasks.md` y añadir `tasks.md` al árbol de documentación de la funcionalidad (Principio I)
+- [x] T019 Ejecutar y dejar en verde la batería completa: `pytest tests/` (148 tests previos + los nuevos, sin regresiones), `ruff check src/ tests/`, `ruff format --check src/ tests/`, `mypy src/` y `pip-audit` sobre el entorno — cero avisos, cero errores (Principio VI)
+- [x] T020 Auditoría de seguridad y anti-patrones: `git grep` de formas de credencial (`-----BEGIN`, `Bearer `, `password`, `enc:` real, `session_id` completo) sobre todo el repositorio incluido `.github/workflows/` (debe salir limpio salvo placeholders de `.env.example`), confirmar que ningún test nuevo hace red ni depende de GitHub (Principio III), y que no se ha añadido ningún `print()` en módulos de núcleo (Anti-patrón #6)
+- [x] T021 Verificar la trazabilidad contrato → test: para cada una de las 14 invariantes de `contracts/sync-workflow.md` § 6 existe un test con nombre explícito en `tests/unit/test_sync_workflow.py` o `tests/unit/test_workflow_secret_guards.py`, y los 14 nombres de secreto coinciden exactamente en workflow, tests, `quickstart.md` y `data-model.md` (FR-004, FR-013)
 - [ ] T022 Cierre de iteración (post-merge, requisito del roadmap): mergear la PR, ejecutar `gh workflow run sync.yml` sobre `main`, registrar en `docs/context.md` (sección `Despliegue y operación`) la primera ejecución real exitosa con fecha y resultado del resumen, y confirmar que el cron aparece en `gh run list --workflow=sync.yml`
-- [ ] T023 Publicar la rama y abrir la PR (`feat(007): schedule daily sync in GitHub Actions (IT7)`) referenciando las tareas implementadas (`Implements T001-T021`), con el resumen de las 11 decisiones de `research.md` y la evidencia de los gates en verde; CI debe quedar en `success`
+  > **Abierta a 2026-11-04**: la PR y el cron están hechos (PR #9 mergeada el 2026-10-17; `gh run list --workflow=sync.yml` muestra ejecuciones `schedule` en `main`), pero **nunca ha habido una ejecución exitosa que registrar**: las 25 ejecuciones del workflow hasta la fecha terminaron en `failure`. Las tres últimas (2026-11-02/03/04) son anteriores al merge de #20, que convierte «banco sin sesión PSD2» en estado quieto en vez de fallo. La tarea se cierra cuando la siguiente ejecución diaria termine en `success`, y entonces se anota fecha y resumen en `docs/context.md`.
+- [x] T023 Publicar la rama y abrir la PR (`feat(007): schedule daily sync in GitHub Actions (IT7)`) referenciando las tareas implementadas (`Implements T001-T021`), con el resumen de las 11 decisiones de `research.md` y la evidencia de los gates en verde; CI debe quedar en `success`
+
+---
+
+## Registro de cierre (2026-11-04)
+
+Verificación de las tareas marcadas arriba, ejecutada contra el árbol de `main` en
+la fecha indicada. No se marca nada que no se haya comprobado; T022 queda abierta
+porque su criterio no se ha cumplido todavía.
+
+| Tareas | Evidencia |
+|---|---|
+| T001 | `requirements-dev.txt:6` fija `pyyaml==6.0.3`; `requirements.txt`, `requirements-dev.txt` y `[project].dependencies` sin cambios respecto a IT1 (`pyproject.toml` sin `pyyaml`); `tests/unit/test_dependencies.py` en verde |
+| T002 | `.gitignore:20-23`: `.env`, `.env.*` y `*.pem` en la sección `# Secrets` |
+| T003-T004 | `tests/unit/test_workflow_secret_guards.py` (5 tests) y `tests/unit/test_sync_workflow.py` (21 tests), ambos en verde |
+| T005-T015 | `.github/workflows/sync.yml` (166 líneas) con los 14 `secrets.*`, validación previa sin red, aprovisionamiento en `$RUNNER_TEMP`, `concurrency: banking-sync`, resumen `if: always()` y propagación del exit code; sus 21 tests en `tests/unit/test_sync_workflow.py` pasan |
+| T016 | `docs/context.md`: fila IT7 de la tabla de iteraciones marcada `Implementada (2026-10-17)` y sección `Despliegue y operación (IT7)` con disparadores, ejecución, configuración y resultado |
+| T017 | `quickstart.md:362` — sección `IT7 — Ejecución automática diaria` |
+| T018 | `specs/007-scheduler-github-actions/plan.md:7` (bloque `➡️ Siguiente paso` apuntando a `/speckit-implement`) y `:138` (`tasks.md` en el árbol de documentación) |
+| T019 | 2026-11-04: `pytest tests/ -q` → **287 passed**, 0 skipped; `ruff check src/ tests/` → limpio; `ruff format --check src/ tests/` → 47 ficheros formateados; `mypy src/` → sin incidencias en 20 ficheros. `pip-audit -r requirements.txt` **no es ejecutable en local** (el intérprete del `.venv` no tiene `ensurepip`, así que `pip-audit` no puede construir su venv temporal); ese gate lo cubre `ci.yml`, en verde en `main` (run `41867572680`) |
+| T020 | `git grep` de `-----BEGIN`, `Bearer `, `password=`, `enc:`, `private_key` y `session_id` sobre el repositorio: sólo aparecen nombres de variable y la constante de prefijo `enc:` de `secret_store.py`, ninguna credencial literal; ni `test_sync_workflow.py` ni `test_workflow_secret_guards.py` importan red, `gh` ni APIs bancarias |
+| T021 | Los 14 nombres de `secrets.*` de `sync.yml` (`BANKING_MASTER_KEY`, `ENABLE_BANKING_APP_ID`, `ENABLE_BANKING_PRIVATE_KEY`, las 4 `ENABLE_BANKING_SESSION_ID_*`, `GOOGLE_SHEETS_CREDENTIALS`, `GOOGLE_SHEET_ID`, `NOTIFY_EMAIL_TO`, `SMTP_HOST`, `SMTP_PASSWORD`, `SMTP_PORT`, `SMTP_USER`) aparecen también en `tests/unit/test_sync_workflow.py`, `quickstart.md`, `data-model.md` y `contracts/sync-workflow.md`; la tabla de trazabilidad contrato → test está al final de este fichero |
+| T023 | PR #9 `feat(007): schedule daily sync in GitHub Actions (IT7)`, mergeada el 2026-10-17 (squash `b805934`), CI en `success` |
+
+**Desviaciones registradas**: T016 exigía la fecha en la tabla de iteraciones y no
+estaba; se añadió al cerrar este registro (2026-10-17, fecha de merge de la PR #9).
+T019 queda verificado salvo `pip-audit` en local, por limitación del entorno y no
+del repositorio.
 
 ---
 
