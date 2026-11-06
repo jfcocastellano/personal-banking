@@ -3,6 +3,7 @@
 import argparse
 import sys
 
+from banking.cli import daily as daily_cmd
 from banking.cli import layout as layout_cmd
 from banking.cli import secrets as secrets_cmd
 from banking.cli import sync as sync_cmd
@@ -17,6 +18,7 @@ def _build_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="command", metavar="<command>")
     secrets_cmd.add_parser(subparsers)
     sync_cmd.add_parser(subparsers)
+    daily_cmd.add_parser(subparsers)
     layout_cmd.add_parser(subparsers)
     return parser
 
@@ -33,6 +35,7 @@ def main() -> None:
         print("Commands:")
         print("  secrets   Manage encrypted configuration secrets")
         print("  sync      Fetch this month's movements from all four banks and write to Sheets")
+        print("  daily     Fetch once per bank and write both the raw and layout tabs")
         print("  layout    Generate the monthly accounting layout tab (<YYYY-MM> Gastos)")
         print()
         print("Run 'banking <command> --help' for more information.")
@@ -44,6 +47,10 @@ def main() -> None:
 
     if args.command == "sync":
         exit_code = sync_cmd.handle(args)
+        sys.exit(exit_code)
+
+    if args.command == "daily":
+        exit_code = daily_cmd.handle(args)
         sys.exit(exit_code)
 
     if args.command == "layout":

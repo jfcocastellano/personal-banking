@@ -6,7 +6,9 @@ import subprocess
 import sys
 from pathlib import Path
 
-from banking.__main__ import _build_parser
+import pytest
+
+from banking.__main__ import _build_parser, main
 
 
 def test_entry_point_no_args_exits_zero() -> None:
@@ -26,6 +28,36 @@ def test_sync_subcommand_is_registered() -> None:
     """`sync` parses as a known subcommand — never invokes the real pipeline."""
     args = _build_parser().parse_args(["sync"])
     assert args.command == "sync"
+
+
+def test_daily_subcommand_is_registered() -> None:
+    """`daily` parses as a known subcommand — never invokes the real pipeline."""
+    args = _build_parser().parse_args(["daily"])
+    assert args.command == "daily"
+
+
+def test_daily_rejects_an_unknown_flag(capsys: pytest.CaptureFixture[str]) -> None:
+    """`daily` takes no options; the parse error belongs to the top-level parser."""
+    with pytest.raises(SystemExit) as excinfo:
+        _build_parser().parse_args(["daily", "--unexpected"])
+
+    assert excinfo.value.code == 2
+    err = capsys.readouterr().err
+    assert "usage" in err.lower()
+    assert "unexpected" in err
+
+
+def test_main_dispatches_daily_to_its_handler(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The entry point routes `daily` to its handler and exits with its code."""
+    from banking.cli import daily as daily_cmd
+
+    monkeypatch.setattr(sys, "argv", ["banking", "daily"])
+    monkeypatch.setattr(daily_cmd, "handle", lambda *args, **kwargs: 0)
+
+    with pytest.raises(SystemExit) as excinfo:
+        main()
+
+    assert excinfo.value.code == 0
 
 
 def test_entry_point_unknown_subcommand_exits_nonzero() -> None:

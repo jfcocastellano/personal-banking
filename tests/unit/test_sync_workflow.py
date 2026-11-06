@@ -16,6 +16,8 @@ Growth history (Test-First, Principle II):
 * T008 — execution and exit-code propagation.
 * T012 — manual trigger and mutual exclusion (US2).
 * T014 — published step summary (US3).
+* T005 of ``016-single-daily-pass`` — the scheduled command is `banking daily`
+  and the summary reports what the daily pass produces (FR-010, FR-011).
 """
 
 from __future__ import annotations
@@ -226,8 +228,10 @@ def test_configuration_is_provisioned_into_the_existing_mechanisms() -> None:
 
 
 def test_sync_step_runs_the_same_command_as_local() -> None:
-    """The scheduler runs the very same CLI command as a local run (FR-003)."""
-    assert "python -m banking sync" in _run_text("Ejecutar sincronización")
+    """The scheduler runs the daily pass, the same command as a local run."""
+    script = _run_text("Ejecutar sincronización")
+    assert "python -m banking daily" in script, "The scheduler does not run the daily pass"
+    assert "python -m banking sync" not in script, "The superseded sync command is still scheduled"
 
 
 def test_sync_step_captures_output_and_exit_code() -> None:
@@ -301,8 +305,27 @@ def test_summary_lists_banks_movements_failures_and_duration() -> None:
     """The four mandated data points come from the filtered process output."""
     script = _run_text("Publicar resumen")
     assert "Sincronización" in script, "Summary does not filter the headline line"
+    assert "Pasada diaria" in script, "Summary does not filter the daily pass headline"
     assert "  - " in script, "Summary does not filter the per-bank lines"
     assert "sync-output.log" in script, "Summary does not read the captured log"
+
+
+def test_summary_reports_both_tabs_absences_failures_and_duration() -> None:
+    """FR-011: banks, both tabs, banks without a session, failures and duration."""
+    script = _run_text("Publicar resumen")
+    assert "Bancos sincronizados" in script, "Summary does not report the synced banks"
+    assert "movimientos por pestaña" in script, "Summary does not report both tabs"
+    assert "duración" in script, "Summary does not report the duration"
+    assert "Bancos sin sesión PSD2" in script, "Summary does not report banks without a session"
+    assert "Bancos con fallo" in script, "Summary does not report the failed banks"
+    # The counts come from the log lines `banking.daily` emits once per bank and
+    # stage, so they also exist on the total-failure path, where the command
+    # prints no per-bank report.
+    assert "Daily pass skipped stage" in script, "No not-onboarded source line"
+    assert "Daily pass stage failed" in script, "No stage-failure source line"
+    assert "stage=transactions" in script, "Failures are not sourced from the bank stages"
+    assert "stage=balance" in script, "Balance failures are not sourced from the log"
+    assert "Pasada diaria" in script, "The headline (tabs, rows, duration) is not echoed"
 
 
 def test_summary_degrades_gracefully_without_process_output() -> None:
