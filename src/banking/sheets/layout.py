@@ -8,8 +8,8 @@ spacer.
 ``build_month_grid`` is a pure function of plain data, so the geometry is
 testable without a network or a spreadsheet. ``LayoutWriter`` owns every
 Google Sheets concern: it creates the tab once and afterwards rewrites only
-the expense block, which is what lets hand-typed shared amounts survive a
-regeneration (FR-009).
+the expense block and the summary/balances panel, which is what lets
+hand-typed shared amounts survive a regeneration (FR-009).
 """
 
 import logging
@@ -18,9 +18,11 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
+from typing import Protocol
 
 import gspread
 
+from banking.connectors.enable_banking import Balance, Transaction
 from banking.sheets.writer import (
     CellValue,
     SheetsAccessError,
@@ -127,6 +129,18 @@ _BALANCE_TITLE_ROW = _SUMMARY_TOTAL_ROW + 2  # 8
 _BALANCE_HEADER_ROW = _BALANCE_TITLE_ROW + 1
 _BALANCE_FIRST_ROW = _BALANCE_HEADER_ROW + 1
 
+
+def _summary_panel_last_row(balance_count: int) -> int:
+    """Last row of the summary/balances panel for ``balance_count`` accounts."""
+    return _BALANCE_FIRST_ROW + balance_count + 1
+
+
+# Panel height the update path clears. Deliberately larger than the four
+# connectors, so a panel that shrank (an account removed, a bank offline)
+# leaves no stale row behind.
+_MAX_BALANCE_ROWS = 8
+_SUMMARY_PANEL_LAST_ROW = _summary_panel_last_row(_MAX_BALANCE_ROWS)  # 19
+
 _EXPENSE_REGION = f"B{_EXPENSE_FIRST_ROW}:E{_EXPENSE_LAST_ROW}"
 _AMOUNT_RANGE = f"$E${_EXPENSE_FIRST_ROW}:$E${_EXPENSE_LAST_ROW}"
 _INCOME_FORMULA = f'=SUMIF({_AMOUNT_RANGE},">0",{_AMOUNT_RANGE})'
@@ -140,6 +154,10 @@ _TITLE_RANGES: tuple[str, ...] = (
 )
 
 _NO_REFERENCE_DATE = "sin dato de referencia"
+
+# Tab-name suffix shared by every layout tab. ``banking.cli.layout`` keeps its
+# own copy because it owns the manual backfill path; both must stay in sync.
+_LAYOUT_TAB_SUFFIX = " Gastos"
 
 _BOLD = {"textFormat": {"bold": True}}
 _MONEY_FORMAT = {"numberFormat": {"type": "NUMBER", "pattern": '#,##0.00 "€"'}}
@@ -167,6 +185,83 @@ class AccountBalance:
     amount: Decimal | None
     currency: str = "EUR"
     reference_date: date | None = None
+
+
+class BankSource(Protocol):
+    """What the layout input mappers need from one bank's fetched data.
+
+    Any per-bank result object that carries these three attributes can be
+    mapped, whatever layer produced it; this keeps the mappers independent of
+    whether the caller fetched one month for the layout or one pass for the
+    daily job. The members are read-only properties so a frozen dataclass of
+    the calling layer satisfies the protocol.
+    """
+
+    @property
+    def bank_name(self) -> str: ...
+
+    @property
+    def transactions(self) -> Sequence[Transaction]: ...
+
+    @property
+    def balance(self) -> Balance | None: ...
+
+
+def expense_rows_from_banks(banks: Sequence[BankSource]) -> list[ExpenseRow]:
+    """The individual-expenses block: every transaction of every bank.
+
+    Args:
+        banks: The per-bank results, in the desired output order.
+
+    Returns:
+        One `ExpenseRow` per transaction, in bank order and then in the order
+        each bank reported its transactions.
+    """
+    return [
+        ExpenseRow(
+            booking_date=transaction.booking_date,
+            bank=bank.bank_name,
+            description=transaction.description,
+            amount=transaction.amount,
+        )
+        for bank in banks
+        for transaction in bank.transactions
+    ]
+
+
+def balances_from_banks(banks: Sequence[BankSource]) -> list[AccountBalance]:
+    """One balance row per bank, empty when the bank reported no balance.
+
+    Args:
+        banks: The per-bank results, in the desired output order.
+
+    Returns:
+        One `AccountBalance` per bank, in the same order as ``banks``. A bank
+        without a balance yields ``amount=None``, ``currency="EUR"`` and
+        ``reference_date=None``, so the cell stays empty instead of inventing
+        a zero.
+    """
+    return [
+        AccountBalance(
+            bank=bank.bank_name,
+            amount=bank.balance.amount if bank.balance is not None else None,
+            currency=bank.balance.currency if bank.balance is not None else "EUR",
+            reference_date=bank.balance.reference_date if bank.balance is not None else None,
+        )
+        for bank in banks
+    ]
+
+
+def layout_tab_name(month_start: date) -> str:
+    """Return the layout tab name for the month starting on ``month_start``.
+
+    Args:
+        month_start: Any date of the target month; the day is ignored.
+
+    Returns:
+        ``<YYYY-MM> Gastos``, the single tab-name format the layout owns.
+    """
+    return f"{month_start.strftime('%Y-%m')}{_LAYOUT_TAB_SUFFIX}"
 
 
 def _expense_row(transaction: ExpenseRow) -> list[CellValue]:
@@ -347,11 +442,50 @@ def _write_expense_region(worksheet: gspread.Worksheet, transactions: Sequence[E
         raise _translate_api_error(exc) from exc
 
 
+def _write_summary_region(worksheet: gspread.Worksheet, balances: Sequence[AccountBalance]) -> None:
+    """Clear and rewrite only J:K, from the summary down to the reference date.
+
+    The same placement helpers as ``build_month_grid`` fill the region, so the
+    creation path and the daily refresh cannot drift apart. Columns A-I are
+    never addressed, which is what keeps ``G:H`` (hand-typed shared amounts) and
+    ``B:E`` (expenses) intact.
+
+    The write is USER_ENTERED because the summary cells are formulas and must
+    evaluate. The clear always reaches ``_SUMMARY_PANEL_LAST_ROW`` even when the
+    panel is shorter, so a dropped account leaves no stale row behind.
+    """
+    first_row = _SUMMARY_FIRST_ROW
+    last_row = max(_summary_panel_last_row(len(balances)), _SUMMARY_PANEL_LAST_ROW)
+
+    cells: dict[int, list[CellValue]] = {}
+
+    def place(row: int, column: int, value: CellValue) -> None:
+        line = cells.setdefault(row, [])
+        while len(line) <= column:
+            line.append(None)
+        line[column] = value
+
+    _place_summary(place)
+    _place_balances(place, balances)
+
+    grid: list[list[CellValue]] = []
+    for row in range(first_row, last_row + 1):
+        line = cells.get(row, [])
+        grid.append([line[column] if column < len(line) else None for column in (_COL_J, _COL_K)])
+
+    try:
+        worksheet.batch_clear([f"J{first_row}:K{last_row}"])
+        worksheet.update(values=grid, range_name=f"J{first_row}", raw=False)
+        worksheet.format(f"K{first_row}:K{last_row}", _MONEY_FORMAT)
+    except gspread.exceptions.APIError as exc:
+        raise _translate_api_error(exc) from exc
+
+
 def _merge_titles(worksheet: gspread.Worksheet) -> None:
     """Merge the three title ranges the layout contract declares.
 
-    Creation only: a merge is a structural property of the tab, and the update
-    path must not touch anything outside the expense region.
+    Creation only: a merge is a structural property of the tab, and neither the
+    expense region nor the summary panel re-merges anything on update.
     """
     try:
         for title_range in _TITLE_RANGES:
@@ -388,10 +522,11 @@ def _apply_light_formatting(worksheet: gspread.Worksheet, balance_count: int) ->
 class LayoutWriter:
     """Owns the ``<YYYY-MM> Gastos`` tab.
 
-    The tab is created once with the full grid; every later run clears and
-    rewrites only ``B4:E403``. The shared-expense catalogue, the summary and
-    the balances panel are therefore never touched again, which is what keeps
-    hand-typed amounts safe (FR-009).
+    The tab is created once with the full grid. Every later run clears and
+    rewrites ``B4:E403`` and the ``J:K`` summary/balances panel (so the balances
+    stay a fresh snapshot with the bank's reference date), and nothing else. The
+    shared-expense block ``G:H`` is therefore never touched again, which is what
+    keeps hand-typed amounts safe (FR-009).
     """
 
     def __init__(self, client: gspread.Client | None = None) -> None:
@@ -433,6 +568,7 @@ class LayoutWriter:
                 _apply_light_formatting(worksheet, balance_count=len(balances))
             else:
                 _write_expense_region(worksheet, transactions)
+                _write_summary_region(worksheet, balances)
         except (
             SheetsConfigError,
             SheetsAccessError,

@@ -24,13 +24,17 @@ from datetime import date
 
 from banking.config.secret_store import SecretStore
 from banking.connectors.enable_banking import Balance, EnableBankingConnector, Transaction
-from banking.sheets.layout import AccountBalance, ExpenseRow, LayoutWriter
+from banking.sheets.layout import (
+    LayoutWriter,
+    balances_from_banks,
+    expense_rows_from_banks,
+    layout_tab_name,
+)
 from banking.sync import _CONNECTOR_CLASSES
 
 logger = logging.getLogger(__name__)
 
 _SHEET_ID_KEY = "GOOGLE_SHEET_ID"
-_LAYOUT_TAB_SUFFIX = " Gastos"
 _MONTH_PATTERN = re.compile(r"(\d{4})-(\d{2})")
 
 EXIT_OK = 0
@@ -164,7 +168,7 @@ def _month_range(month_start: date, today: date) -> tuple[date, date]:
 
 
 def _tab_name(month_start: date) -> str:
-    return f"{month_start.strftime('%Y-%m')}{_LAYOUT_TAB_SUFFIX}"
+    return layout_tab_name(month_start)
 
 
 def _failure_reason(exc: Exception) -> str:
@@ -205,33 +209,6 @@ def _run_one_bank(connector: EnableBankingConnector, start_date: date, end_date:
         balance=balance,
         balance_failure=balance_failure,
     )
-
-
-def _expense_rows(outcomes: Sequence[BankRun]) -> list[ExpenseRow]:
-    """The individual-expenses block: every transaction of every bank."""
-    return [
-        ExpenseRow(
-            booking_date=transaction.booking_date,
-            bank=outcome.bank_name,
-            description=transaction.description,
-            amount=transaction.amount,
-        )
-        for outcome in outcomes
-        for transaction in outcome.transactions
-    ]
-
-
-def _account_balances(outcomes: Sequence[BankRun]) -> list[AccountBalance]:
-    """One balance row per connector-backed account, empty when unreported."""
-    return [
-        AccountBalance(
-            bank=outcome.bank_name,
-            amount=outcome.balance.amount if outcome.balance is not None else None,
-            currency=outcome.balance.currency if outcome.balance is not None else "EUR",
-            reference_date=outcome.balance.reference_date if outcome.balance is not None else None,
-        )
-        for outcome in outcomes
-    ]
 
 
 def run_layout(
@@ -275,8 +252,8 @@ def run_layout(
             tab_name=tab_name,
         )
 
-    expense_rows = _expense_rows(outcomes)
-    balances = _account_balances(outcomes)
+    expense_rows = expense_rows_from_banks(outcomes)
+    balances = balances_from_banks(outcomes)
     layout_writer = writer if writer is not None else LayoutWriter()
 
     try:
