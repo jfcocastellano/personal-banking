@@ -392,12 +392,13 @@ def run_daily(
     duration = time.monotonic() - start
     logger.info(
         "Daily pass succeeded: status=%s raw_tab=%s layout_tab=%s rows_written=%d "
-        "balances=%d duration=%.3fs",
+        "balance_rows=%d balances_reported=%d duration=%.3fs",
         overall_status.value,
         raw_tab_name,
         target_layout_tab,
         len(raw_rows),
         len(balances),
+        sum(1 for balance in balances if balance.amount is not None),
         duration,
     )
     return DailySummary(
