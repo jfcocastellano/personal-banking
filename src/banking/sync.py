@@ -19,6 +19,7 @@ from banking.connectors.ing import IngConnector
 from banking.connectors.myinvestor import MyInvestorConnector
 from banking.connectors.revolut import RevolutConnector
 from banking.connectors.sabadell import SabadellConnector
+from banking.run_summary import total_failure_message
 from banking.sheets.writer import CellValue, SheetsWriter
 
 logger = logging.getLogger(__name__)
@@ -149,21 +150,6 @@ def _classify(outcomes: list[BankOutcome]) -> OverallStatus:
     return OverallStatus.TOTAL_FAILURE
 
 
-def _total_failure_message(
-    failed: list[BankOutcome],
-    not_onboarded: list[BankOutcome],
-) -> str:
-    """Render a total-failure message that does not call onboarded banks failed."""
-    aggregate = "; ".join(f"{o.bank_name}: {o.failure_reason}" for o in failed)
-    if not not_onboarded:
-        return f"All {len(failed)} banks failed: {aggregate}"
-    names = ", ".join(o.bank_name for o in not_onboarded)
-    return (
-        f"No bank could sync. Failed: {aggregate}. "
-        f"Not onboarded (no PSD2 session yet, not a failure): {names}"
-    )
-
-
 def _sync_one_bank(
     connector: EnableBankingConnector, start_date: date, end_date: date
 ) -> tuple[BankOutcome, list[Transaction]]:
@@ -267,7 +253,7 @@ def run_sync(
             aggregate,
         )
         raise AllBanksFailedError(
-            _total_failure_message(failed, not_onboarded),
+            total_failure_message(failed, not_onboarded),
             outcomes=outcomes,
             tab_name=tab_name,
         )
