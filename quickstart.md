@@ -398,7 +398,8 @@ gh workflow run sync.yml --repo "$REPO"
 gh run watch --repo "$REPO"
 ```
 
-Comprueba: estado `success`, resumen con `Sincronización completada: 4/4 bancos`,
+Comprueba: estado `success`, resumen con `Sincronización completada: 4/4 bancos` (con la
+pasada diaria el encabezado dice `Pasada diaria completada: N/4 bancos`),
 movimientos y pestaña, una línea por banco y duración; la pestaña del mes contiene
 los movimientos; ningún email (éxito completo); duración por debajo de 10 minutos.
 
@@ -438,8 +439,10 @@ Si no tenés `BANKING_MASTER_KEY` en la máquina, corré el mismo comando desde
 GitHub Actions: `Actions → Layout mensual → Run workflow`.
 
 - El tab se llama `<YYYY-MM> Gastos`; el `<YYYY-MM>` que escribe el sync no cambia.
-- La primera corrida crea los tres bloques. Las siguientes reescriben **solo**
-  `B4:E403`; todo lo que edites en `G:H` y `J:K` se respeta.
+- La primera corrida crea los tres bloques. Las siguientes reescriben `B4:E403`
+  **y** el resumen con el panel de saldos (`J:K`), que ahora se refresca en cada
+  corrida; lo único que se respeta es lo que edites en `G:H`, que no recibe
+  escrituras.
 - Los totales son fórmulas (dos `SUMIF` sobre la columna de importes; el neto suma ambas
   celdas), así que un importe corregido a mano se refleja solo.
 - El bloque de gastos comunes trae el catálogo de categorías con los importes vacíos y se llena a
@@ -452,6 +455,34 @@ GitHub Actions: `Actions → Layout mensual → Run workflow`.
 - N26 aparece en la hoja original pero no tiene conector en el proyecto.
 
 Guía completa, límites y verificación manual: `specs/008-monthly-sheet-layout/quickstart.md`.
+
+## Pasada diaria única (`banking daily`)
+
+El workflow diario ya no ejecuta `banking sync` sino `banking daily`: un solo
+proceso que consulta cada banco una vez (movimientos y saldo) y escribe las dos
+pestañas del mes en curso con ese mismo conjunto de movimientos, en vez de
+encadenar `sync` y `layout`, que gastarían 3 de las 4 peticiones PSD2 por cuenta
+y día.
+
+```bash
+.venv/bin/python -m banking daily   # no toma argumentos: el mes es el de ejecución
+```
+
+Los dos comandos viejos **siguen existiendo y no cambiaron**: `banking sync`
+corre solo la pestaña cruda y `banking layout --month` sigue siendo el camino
+de backfill de un mes concreto. Lo que cambió es quién corre todos los días.
+
+- La pasada usa los mismos cinco códigos de salida que `sync` (`0`-`4`); `layout`
+  conserva su tabla propia, más corta y distinta.
+- `B4:E403` y `J:K` son de la máquina y se reescriben en cada corrida, incluso lo
+  que hayas tipeado ahí; `G:H` sobrevive.
+- El saldo es una foto del momento de la corrida con la fecha de referencia del
+  banco: no hay histórico, y el mes anterior deja de actualizarse cuando el mes
+  cambia. Las dos cosas son limitaciones declaradas, no omisiones.
+- Si todos los bancos están sin sesión PSD2, no escribe nada (ni borra lo que
+  había), no manda email y sale `0`.
+
+Guía completa: `specs/016-single-daily-pass/quickstart.md`.
 
 ## Notes
 

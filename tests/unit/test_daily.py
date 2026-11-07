@@ -721,3 +721,36 @@ def test_run_daily_without_connectors_raises_no_connectors_error() -> None:
             document_id=_DOCUMENT_ID,
             today=_END,
         )
+
+
+def test_success_log_separates_balance_rows_from_reported_balances(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A bank without a balance still gets a row; the log must not call it a balance."""
+    reporting = _FakeConnector(
+        "ING España",
+        transactions=[_transaction("ING tx")],
+        balance=_balance("120.00"),
+    )
+    silent = _FakeConnector(
+        "MyInvestor",
+        transactions_error=BankNotOnboardedError("no PSD2 session configured"),
+    )
+
+    with caplog.at_level(logging.INFO, logger="banking.daily"):
+        run_daily(
+            connectors=[reporting, silent],
+            writer=_RecordingWriter(),
+            layout_writer=_RecordingLayoutWriter(),
+            document_id=_DOCUMENT_ID,
+            today=_END,
+        )
+
+    succeeded = [
+        record.getMessage()
+        for record in _daily_records(caplog)
+        if "Daily pass succeeded" in record.getMessage()
+    ]
+    assert len(succeeded) == 1
+    assert "balance_rows=2" in succeeded[0]
+    assert "balances_reported=1" in succeeded[0]

@@ -95,3 +95,27 @@ _(se completa al cerrar cada tarea: commit, gates y evidencia)_
 - Resumen: la cabecera `Pasada diaria ...` se copia entera (no se re-parsea prosa) y aporta bancos X/Y, movimientos por pestaña y duración; tres `grep -c` aportan bancos sin sesión, bancos con fallo y saldos con fallo.
 - Acoplamiento aceptado y pinchado por test: los `grep` matchean las líneas de log de `banking.daily`; renombrarlas obliga a tocar `sync.yml`.
 - Limitación conocida: en el camino `NOTHING_TO_SYNC` la cabecera no trae conteos porque no se escribió nada; es el comportamiento del comando, no del resumen.
+
+### T006 — cerrada
+
+- Commit: `docs(016): document the daily pass and its balance-panel consequences`.
+- Sin RED aplicable: documentación pasiva, sin comportamiento ejecutable nuevo; verificación por `grep`, resolución de links y suite intacta (328 passed).
+- `docs/context.md`: workflow que ejecuta `daily`, tabla de los tres comandos, tabla de exit codes compartida por `sync`/`daily` frente a la propia de `layout`, y la decisión de una sola lectura por banco por la cuota PSD2.
+- `specs/016-single-daily-pass/quickstart.md`: nuevo, con qué refresca cada corrida, qué sobrevive de `G:H`, la limitación de saldo sin histórico y el cambio de mes.
+- `quickstart.md` raíz: corregida la afirmación de que `J:K` se respeta, más una sección con el reemplazo de `sync` por `daily` en el workflow.
+- `docs/roadmap.md`: iteración 8 con Definition of Done, dependencias y riesgos; candidatas no comprometidas (snapshot de saldos, categorización, N26, atomicidad del writer) marcadas explícitamente como no aceptadas.
+- Fuera del brief, corregido por el padre: `specs/008-monthly-sheet-layout/quickstart.md` afirmaba que `J:K` se respeta, lo que T003 dejó falso.
+
+### Correcciones post-verificación
+
+- `6ca4e23` `fix(daily): name balance failures in the email and align panel formatting`: el correo ahora nombra el fallo de saldo de un banco que sí trajo movimientos (viaja como `saldo no disponible: <motivo>` y `notify._build_body` lo renderiza; los correos de `sync` quedan byte-idénticos), la creación y el refresco del panel comparten una sola definición de rango (`_summary_panel_range_last_row`), y se corrigió un comentario obsoleto sobre el sufijo duplicado.
+- `docs(016): correct the PSD2 request accounting`: verificado en `enable_banking.py` que el conector resuelve la sesión con `GET /sessions/{session_id}` antes de **cada** etapa, así que una corrida son **4 GET por cuenta** más paginación, no 2. El margen frente al límite de 4/cuenta/día queda declarado **no verificado**. El argumento de la feature sobrevive mejorado: encadenar `sync` y `layout` habrían sido 6 GET y dos lecturas de movimientos.
+- Deuda declarada que queda abierta: resolver la sesión una vez por corrida ahorraría 2 de esos 4 GET (registrado en los riesgos de IT8, no como parte de esta iteración).
+
+### T007 — verificación
+
+- Gates locales: `ruff check src tests` ✅, `ruff format --check src tests` (51 archivos) ✅, `mypy src` (22 archivos) ✅, `pytest tests/unit -q` → **333 passed** ✅, YAML de `.github/workflows` parseable ✅.
+- `pip-audit`: **no se pudo correr localmente** (el venv de resolución aislada falla por `ensurepip` ausente en la imagen). Lo cubre CI (`.github/workflows/ci.yml:28`). Queda declarado como verificación pendiente de CI, no como verde local.
+- Contratos revisados a mano: orden de los guards antes de leer el secreto y construir los writers; una lectura por banco y por etapa; `_write_summary_region` nunca toca `A`–`I`; el camino de creación conserva el grid completo, el refresco RAW de `B4:E403` y los merges de títulos; exit codes iguales a `sync`; workflow con los 14 secretos una sola vez y `PIPESTATUS[0]`.
+- Hallazgos corregidos: `6ca4e23` y `efb5786`. Deuda declarada que sigue abierta: duplicación de `_notify_and_exit`/`_total_failure_message`/`_print_not_onboarded_note` entre `cli/sync.py` y `cli/daily.py`, `run_daily` repitiendo el esqueleto fetch→guard→write, y la resolución de sesión repetida por etapa.
+- Pendiente real, fuera del alcance del harness: una corrida contra la hoja con secretos reales (`workflow_dispatch`) para registrar el nombre de las dos pestañas, el run id, que ambas avanzaron y que `G:H` sobrevivió.

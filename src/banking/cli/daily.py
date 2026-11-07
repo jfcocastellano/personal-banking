@@ -30,6 +30,10 @@ from banking.notify import DeliveryStatus, EmailNotifier
 from banking.sync import BankOutcome, OverallStatus
 
 _NOTIFICATION_FAILED_MESSAGE = "ERROR (notificación): no se pudo enviar el email de aviso"
+# Prefix for the reason a succeeded bank still carries: its movements arrived,
+# so the run is not failed, but the balance the run could not read is not
+# silently dropped from the failure email.
+_BALANCE_FAILURE_REASON = "saldo no disponible"
 
 
 def add_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
@@ -194,16 +198,25 @@ def _finish_sheets_failure(notifier: EmailNotifier | None, exc: DailySheetsError
 
 
 def _as_outcomes(passes: Sequence[BankPass]) -> list[BankOutcome]:
-    """Adapt daily results to the notifier's per-bank outcome type."""
+    """Adapt daily results to the notifier's per-bank outcome type.
+
+    A bank whose movements arrived is a success even when its balance stage
+    failed, because a balance failure is not a run failure; the reason is still
+    carried over so the email can name it.
+    """
     outcomes: list[BankOutcome] = []
     for run in passes:
         succeeded = _succeeded(run)
-        if succeeded:
-            failure_reason = None
-        elif run.not_onboarded:
-            failure_reason = "sin sesión PSD2"
+        if not succeeded:
+            failure_reason = (
+                "sin sesión PSD2"
+                if run.not_onboarded
+                else run.transactions_failure or run.balance_failure or "unknown failure"
+            )
+        elif run.balance_failure is not None:
+            failure_reason = f"{_BALANCE_FAILURE_REASON}: {run.balance_failure}"
         else:
-            failure_reason = run.transactions_failure or run.balance_failure or "unknown failure"
+            failure_reason = None
         outcomes.append(
             BankOutcome(
                 bank_name=run.bank_name,
