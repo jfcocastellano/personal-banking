@@ -460,9 +460,10 @@ Guía completa, límites y verificación manual: `specs/008-monthly-sheet-layout
 
 El workflow diario ya no ejecuta `banking sync` sino `banking daily`: un solo
 proceso que consulta cada banco una vez (movimientos y saldo) y escribe las dos
-pestañas del mes en curso con ese mismo conjunto de movimientos, en vez de
-encadenar `sync` y `layout`, que gastarían 3 de las 4 peticiones PSD2 por cuenta
-y día.
+pestañas del mes en curso con ese mismo conjunto de movimientos. Gasta 3 GET por
+cuenta más paginación (una consulta de sesión y dos llamadas de datos), frente a
+los 5 GET que gastaría encadenar `sync` y `layout`, que además leería los
+movimientos dos veces.
 
 ```bash
 .venv/bin/python -m banking daily   # no toma argumentos: el mes es el de ejecución

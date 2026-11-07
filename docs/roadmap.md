@@ -494,11 +494,11 @@ IT5 solo necesita el patrón de IT2; IT6 necesita el pipeline de IT4.
     con lo que tenía en su última corrida
   - Las dos pestañas se escriben en dos llamadas separadas: un fallo entre
     ambas deja el crudo actualizado y el layout viejo (exit `2`)
-  - Cada corrida gasta 4 GET por cuenta más paginación, no 2: el conector
-    resuelve la sesión con `GET /sessions/{session_id}` antes de cada etapa
-    (movimientos y saldo). Resolver la sesión una sola vez por corrida
-    ahorraría 2 de esos 4 GET; queda como candidato, no como parte de esta
-    iteración
+  - Cada corrida gasta 3 GET por cuenta más paginación: el conector resuelve
+    la sesión con un único `GET /sessions/{session_id}` y después hace las dos
+    llamadas de datos (movimientos y saldo). Antes resolvía la sesión antes de
+    cada etapa y gastaba 4; el cacheo por instancia llegó con el cierre de la
+    deuda de IT8 (`odd/tasks/016-debt-cleanup.md`)
 
 ---
 
