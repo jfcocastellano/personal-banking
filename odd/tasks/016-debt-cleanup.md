@@ -45,18 +45,22 @@ one extra transactions page.
 
 ## Tasks
 
-- [ ] T1 — Cache the PSD2 session lookup in `EnableBankingConnector` (credential, session id and
+- [x] T1 — Cache the PSD2 session lookup in `EnableBankingConnector` (credential, session id and
       account id resolved once per instance) with a test that counts requests to
       `/sessions/{id}` across `fetch_transactions` + `fetch_balance` (test first: RED before the
-      cache).
-- [ ] T2 — Extract the shared CLI failure helpers into `src/banking/cli/common.py` and consume them
+      cache). Evidence: `a9ccf19`.
+- [x] T2 — Extract the shared CLI failure helpers into `src/banking/cli/common.py` and consume them
       from `cli/sync.py` and `cli/daily.py`, keeping the existing CLI tests green without edits.
-- [ ] T3 — Extract the shared total-failure message into `src/banking/run_summary.py`, backed by a
+      Evidence: `847a866`.
+- [x] T3 — Extract the shared total-failure message into `src/banking/run_summary.py`, backed by a
       `failure_reason` property on `BankPass` and the existing `BankOutcome.failure_reason`.
-- [ ] T4 — Update the quota accounting everywhere it claims the fused pass spends 4 GET
-      (`docs/context.md`, `quickstart.md`, `specs/016-single-daily-pass/{spec,plan,quickstart}.md`).
-- [ ] T5 — Adjudicate `R4-STALE-SUMMARY` in writing: the finding is false and no code changes.
-- [ ] T6 — Gates (`pytest`, `ruff check`, `ruff format --check`, `mypy src/`) and a ready PR.
+      Evidence: `6f4f489`.
+- [x] T4 — Update the quota accounting everywhere it claims the fused pass spends 4 GET
+      (`docs/context.md`, `docs/roadmap.md`, `quickstart.md`,
+      `specs/016-single-daily-pass/{spec,plan,quickstart,tasks}.md`). Evidence: `fc4e48d`.
+- [x] T5 — Adjudicate `R4-STALE-SUMMARY` in writing: the finding is false and no code changes.
+      Evidence: `5d09bb7`.
+- [x] T6 — Gates (`pytest`, `ruff check`, `ruff format --check`, `mypy src/`) and a ready PR.
 
 ## Adjudication: `R4-STALE-SUMMARY`
 
