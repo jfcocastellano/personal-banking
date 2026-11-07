@@ -4,9 +4,18 @@ Goal: land feature 016 (single daily pass) on `main` through its three review sl
 re-reviewing or re-writing the code that already passed 334 unit tests and one real production run
 (`42267975079`).
 
-## Current state (verified 2026-11-07)
+## Current state (verified 2026-11-07, chain closed)
 
-- `origin/main` = `ca23ddf` (squash of slice 1, PR #23). Its tree equals `25a3604`.
+All three slices are on `main` and the chain is closed:
+
+- `origin/main` = `012d45c`. Slice 1 `ca23ddf` (PR #23), slice 2 `d723eb3` (PR #26, tree
+  `483d317f` = the reviewed `8b8556f`), slice 3 `0e1f848` (PR #25, tree `d18eeccd` = the reviewed
+  `fde51a4`, native review approved on `review-c6f1e6057ace1bd7`), T022 close `012d45c` (PR #27).
+- Production evidence: run [`42366404900`], `workflow_dispatch` on `main`, `success` in 36 s,
+  2/4 banks, 13 movements, 13 layout rows.
+- Historical detail kept below for audit: the wrong-base PR #24 and the stale PR #25 base.
+
+## Historical state (2026-11-07, before the fix)
 - PR #24 was **closed by merging into the wrong base**: `origin/016-p1-foundation` = `d004447`,
   1 commit on top of `25a3604`, tree `483d317f` identical to `8b8556f` (slice 2 content).
 - PR #25 is open: head `fde51a4` (`016-p3-docs-fixes`), base `016-p2-cli-workflow` (`8b8556f`).
@@ -31,10 +40,16 @@ re-reviewing or re-writing the code that already passed 334 unit tests and one r
       base `main`, head `ab7378e`, 17 files / +595 / -44, `mergeable_state: clean`.
       Ops note: `pr update 25 --base main` fails with HTTP 400 "Body should be a JSON object" (helper
       bug); `/usr/bin/gh pr edit 25 --base main` works.
-- [ ] T3 — Blocked on the T2 merge. With `banking daily` and the workflow on `main`, run
-      `gh workflow run sync.yml --ref main` once, record date and summary in
-      `docs/context.md` (`Despliegue y operación`) and close T022 of
-      `specs/007-scheduler-github-actions/tasks.md` with that evidence.
+- [x] T3 — Ran `gh workflow run sync.yml --ref main` on the merged `main`. Done: run
+      [`42366404900`] (`workflow_dispatch`, `head_sha=0e1f848`) finished `success` in 36 s with
+      «Pasada diaria completada: 2/4 bancos — 13 movimientos en la pestaña 2026-11 y 13 filas en la
+      pestaña 2026-11 Gastos (8.99s)»; MyInvestor and Banco Sabadell skipped as quiet state (no PSD2
+      session). Evidence recorded in `docs/context.md` § *Despliegue y operación (IT7)* and T022 of
+      `specs/007-scheduler-github-actions/tasks.md` closed, delivered through PR #27 and merged as
+      `012d45c`. Note: today's delayed scheduled run may still fire a second pass on the same PSD2
+      quota day, because GitHub landed the `0 6 * * *` cron 6.5–8.5 h late on every observed day.
+
+[`42366404900`]: https://github.com/jfcocastellano/personal-banking/actions/runs/42366404900
 
 ## Recorded defect outside this chain
 
