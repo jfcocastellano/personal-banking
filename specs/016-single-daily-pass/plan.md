@@ -23,7 +23,7 @@ Agregar un comando `banking daily` que hace en una sola pasada lo que hoy hacen 
 **Project Type**: CLI batch / integración de datos.
 
 **Constraints**:
-- 2 llamadas de datos PSD2 por cuenta y corrida (movimientos + saldo); el conector resuelve la sesión antes de cada una, así que son 4 GET por cuenta más paginación. El margen frente al límite de 4/cuenta/día no está verificado: no está claro si Enable Banking cuenta la consulta de sesión contra ese límite.
+- 2 llamadas de datos PSD2 por cuenta y corrida (movimientos + saldo) y una sola consulta de sesión, así que son 3 GET por cuenta más paginación. Con el límite de 4/cuenta/día queda 1 GET de margen; si la consulta de sesión cuenta contra ese límite no está verificado.
 - Sin lógica de negocio en el YAML del workflow.
 - Toda función pública con anotaciones completas y `mypy` estricto (Principio VI).
 

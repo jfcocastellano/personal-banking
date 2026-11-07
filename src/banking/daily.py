@@ -23,6 +23,7 @@ from banking.connectors.enable_banking import (
     EnableBankingConnector,
     Transaction,
 )
+from banking.run_summary import total_failure_message
 from banking.sheets.layout import (
     LayoutWriter,
     balances_from_banks,
@@ -61,6 +62,11 @@ class BankPass:
     transactions_failure: str | None = None
     balance_failure: str | None = None
     not_onboarded: bool = False
+
+    @property
+    def failure_reason(self) -> str:
+        """The bank's own failure reason, for the aggregate failure message."""
+        return self.transactions_failure or self.balance_failure or "unknown failure"
 
 
 @dataclass(frozen=True)
@@ -231,11 +237,6 @@ def _failed(run: BankPass) -> bool:
     return not _succeeded(run) and not run.not_onboarded
 
 
-def _failure_reason(run: BankPass) -> str:
-    """The bank's own failure reason, for the aggregate failure message."""
-    return run.transactions_failure or run.balance_failure or "unknown failure"
-
-
 def _classify(passes: list[BankPass]) -> OverallStatus:
     """Classify the pass with `sync`'s semantics plus the nothing-to-sync state.
 
@@ -251,18 +252,6 @@ def _classify(passes: list[BankPass]) -> OverallStatus:
     if not succeeded:
         return OverallStatus.NOTHING_TO_SYNC
     return OverallStatus.FULL_SUCCESS
-
-
-def _total_failure_message(failed: list[BankPass], not_onboarded: list[BankPass]) -> str:
-    """Render a total-failure message that does not call onboarded banks failed."""
-    aggregate = "; ".join(f"{run.bank_name}: {_failure_reason(run)}" for run in failed)
-    if not not_onboarded:
-        return f"All {len(failed)} banks failed: {aggregate}"
-    names = ", ".join(run.bank_name for run in not_onboarded)
-    return (
-        f"No bank could sync. Failed: {aggregate}. "
-        f"Not onboarded (no PSD2 session yet, not a failure): {names}"
-    )
 
 
 def run_daily(
@@ -318,10 +307,10 @@ def run_daily(
             "Daily pass failed: banks_failed=%d banks_not_onboarded=%d: %s",
             len(failed),
             len(not_onboarded),
-            "; ".join(f"{run.bank_name}: {_failure_reason(run)}" for run in failed),
+            "; ".join(f"{run.bank_name}: {run.failure_reason}" for run in failed),
         )
         raise NoBankFetchedError(
-            _total_failure_message(failed, not_onboarded),
+            total_failure_message(failed, not_onboarded),
             passes=passes,
             raw_tab_name=raw_tab_name,
             layout_tab_name=target_layout_tab,
