@@ -730,3 +730,84 @@ def test_a_real_session_id_is_still_sent_to_the_api(
 
     connector = _FakeConnector(http_client=mock_http_client(handler))
     assert connector.fetch_transactions(date(2026, 8, 1), date(2026, 8, 31)) == []
+
+
+# ---------------------------------------------------------------------------
+# Resolver la sesión PSD2 una sola vez por instancia del conector
+# ---------------------------------------------------------------------------
+
+
+def _raw_balance(amount: str = "1234.56") -> dict:
+    return {
+        "name": "Closing booked balance",
+        "balance_amount": {"amount": amount, "currency": "EUR"},
+        "balance_type": "CLBD",
+        "reference_date": "2026-08-31",
+    }
+
+
+def _transactions_page(request: httpx.Request) -> dict:
+    """One transactions page, queueing a second page on the first request."""
+    if "continuation_key" in request.url.params:
+        return {"transactions": [_raw_tx(description="Page2 Tx")], "continuation_key": None}
+    return {"transactions": [_raw_tx(description="Page1 Tx")], "continuation_key": "abc123"}
+
+
+def test_session_lookup_happens_once_per_connector_instance(
+    eb_config_dir, fake_session_id_in_store
+) -> None:
+    """The daily pass queries both stages on one instance: resolve the session once."""
+    request_paths: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        request_paths.append(request.url.path)
+        segments = request.url.path.strip("/").split("/")
+        if segments[:1] == ["sessions"] and len(segments) == 2:
+            return httpx.Response(
+                200, json={"status": "AUTHORIZED", "accounts": ["test-account-id"]}
+            )
+        if request.url.path.endswith("/transactions"):
+            return httpx.Response(200, json=_transactions_page(request))
+        return httpx.Response(200, json={"balances": [_raw_balance()]})
+
+    connector = _FakeConnector(http_client=httpx.Client(transport=httpx.MockTransport(handler)))
+
+    transactions = connector.fetch_transactions(date(2026, 8, 1), date(2026, 8, 31))
+    balance = connector.fetch_balance()
+
+    assert {tx.description for tx in transactions} == {"Page1 Tx", "Page2 Tx"}
+    assert balance is not None
+    assert balance.amount == Decimal("1234.56")
+    assert request_paths.count(f"/sessions/{fake_session_id_in_store}") == 1
+    assert request_paths.count("/accounts/test-account-id/transactions") == 2
+    assert request_paths.count("/accounts/test-account-id/balances") == 1
+
+
+def test_failed_session_resolution_is_not_cached(eb_config_dir, fake_session_id_in_store) -> None:
+    """A rejected session is retried on the next call instead of being remembered."""
+    responses = [
+        httpx.Response(403, json={"error": "forbidden"}),
+        httpx.Response(200, json={"status": "AUTHORIZED", "accounts": ["test-account-id"]}),
+        httpx.Response(200, json={"transactions": [], "continuation_key": None}),
+        httpx.Response(200, json={"balances": [_raw_balance()]}),
+    ]
+    request_paths: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        request_paths.append(request.url.path)
+        return responses.pop(0)
+
+    connector = _FakeConnector(http_client=httpx.Client(transport=httpx.MockTransport(handler)))
+
+    with pytest.raises(ReauthorizationRequiredError):
+        connector.fetch_transactions(date(2026, 8, 1), date(2026, 8, 31))
+
+    assert connector.fetch_transactions(date(2026, 8, 1), date(2026, 8, 31)) == []
+    assert connector.fetch_balance() is not None
+
+    assert request_paths == [
+        f"/sessions/{fake_session_id_in_store}",
+        f"/sessions/{fake_session_id_in_store}",
+        "/accounts/test-account-id/transactions",
+        "/accounts/test-account-id/balances",
+    ]
