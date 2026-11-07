@@ -148,8 +148,8 @@ auditar seguridad y cerrar la iteración con la ejecución real que exige el roa
 - [x] T019 Ejecutar y dejar en verde la batería completa: `pytest tests/` (148 tests previos + los nuevos, sin regresiones), `ruff check src/ tests/`, `ruff format --check src/ tests/`, `mypy src/` y `pip-audit` sobre el entorno — cero avisos, cero errores (Principio VI)
 - [x] T020 Auditoría de seguridad y anti-patrones: `git grep` de formas de credencial (`-----BEGIN`, `Bearer `, `password`, `enc:` real, `session_id` completo) sobre todo el repositorio incluido `.github/workflows/` (debe salir limpio salvo placeholders de `.env.example`), confirmar que ningún test nuevo hace red ni depende de GitHub (Principio III), y que no se ha añadido ningún `print()` en módulos de núcleo (Anti-patrón #6)
 - [x] T021 Verificar la trazabilidad contrato → test: para cada una de las 14 invariantes de `contracts/sync-workflow.md` § 6 existe un test con nombre explícito en `tests/unit/test_sync_workflow.py` o `tests/unit/test_workflow_secret_guards.py`, y los 14 nombres de secreto coinciden exactamente en workflow, tests, `quickstart.md` y `data-model.md` (FR-004, FR-013)
-- [ ] T022 Cierre de iteración (post-merge, requisito del roadmap): mergear la PR, ejecutar `gh workflow run sync.yml` sobre `main`, registrar en `docs/context.md` (sección `Despliegue y operación`) la primera ejecución real exitosa con fecha y resultado del resumen, y confirmar que el cron aparece en `gh run list --workflow=sync.yml`
-  > **Abierta a 2026-11-04**: la PR y el cron están hechos (PR #9 mergeada el 2026-10-17; `gh run list --workflow=sync.yml` muestra ejecuciones `schedule` en `main`), pero **nunca ha habido una ejecución exitosa que registrar**: las 25 ejecuciones del workflow hasta la fecha terminaron en `failure`. Las tres últimas (2026-11-02/03/04) son anteriores al merge de #20, que convierte «banco sin sesión PSD2» en estado quieto en vez de fallo. La tarea se cierra cuando la siguiente ejecución diaria termine en `success`, y entonces se anota fecha y resumen en `docs/context.md`.
+- [x] T022 Cierre de iteración (post-merge, requisito del roadmap): mergear la PR, ejecutar `gh workflow run sync.yml` sobre `main`, registrar en `docs/context.md` (sección `Despliegue y operación`) la primera ejecución real exitosa con fecha y resultado del resumen, y confirmar que el cron aparece en `gh run list --workflow=sync.yml`
+  > **Cerrada el 2026-11-07**: PR #9 mergeada el 2026-10-17. Ejecución manual `42366404900` (`gh workflow run sync.yml --ref main`) sobre `main` en `0e1f848` — el árbol revisado y aprobado de la feature 016 — terminó en `success` en 36 s con el resumen «Pasada diaria completada: 2/4 bancos — 13 movimientos en la pestaña 2026-11 y 13 filas en la pestaña 2026-11 Gastos (8.99s)» y `balances_reported=2` de `balance_rows=4`; MyInvestor y Banco Sabadell quedaron sin sesión PSD2, que es estado quieto y no fallo. Fecha y resultado registrados en `docs/context.md` § *Despliegue y operación (IT7)*. `gh run list --workflow=sync.yml` muestra las ejecuciones `schedule` en `main` del 2026-11-01 al 2026-11-06. Contexto de la espera: las 25 ejecuciones previas al merge de #20 terminaban en `failure`; desde #20 las programadas del 2026-11-05 y 2026-11-06 ya terminaron en `success`, pero sobre el código anterior a la pasada diaria fusionada, así que no servían como evidencia de esta iteración.
 - [x] T023 Publicar la rama y abrir la PR (`feat(007): schedule daily sync in GitHub Actions (IT7)`) referenciando las tareas implementadas (`Implements T001-T021`), con el resumen de las 11 decisiones de `research.md` y la evidencia de los gates en verde; CI debe quedar en `success`
 
 ---
@@ -178,6 +178,26 @@ porque su criterio no se ha cumplido todavía.
 estaba; se añadió al cerrar este registro (2026-10-17, fecha de merge de la PR #9).
 T019 queda verificado salvo `pip-audit` en local, por limitación del entorno y no
 del repositorio.
+
+---
+
+## Registro de cierre (2026-11-07)
+
+Cierre de la única tarea que quedaba abierta. Verificado contra el árbol de `main`
+en `0e1f848` (squash de la feature 016, árbol `d18eeccd`), el mismo que pasó la
+revisión nativa de la pasada diaria fusionada.
+
+| Tareas | Evidencia |
+|---|---|
+| T022 | `gh workflow run sync.yml --ref main` → ejecución [`42366404900`](https://github.com/jfcocastellano/personal-banking/actions/runs/42366404900), `workflow_dispatch`, `head_sha=0e1f848`, `conclusion=success`, inicio `2026-11-07T11:01:36Z`, fin `11:02:12Z` (36 s). Log: `Daily pass succeeded: status=full_success raw_tab=2026-11 layout_tab=2026-11 Gastos rows_written=13 balance_rows=4 balances_reported=2 duration=8.990s` y `Pasada diaria completada: 2/4 bancos`. Sin sesión PSD2: MyInvestor y Banco Sabadell (estado quieto, no fallo). Cron confirmado con `gh run list --workflow=sync.yml`: ejecuciones `schedule` en `main` el 2026-11-01, 02, 03, 04, 05 y 06. Registro operativo en `docs/context.md` § *Despliegue y operación (IT7)* |
+
+**Desviaciones registradas**: T022 exigía «la primera ejecución real exitosa», y
+hubo dos ejecuciones programadas en verde (2026-11-05 y 2026-11-06) antes de esta;
+ambas corrían el código previo a la pasada diaria fusionada, así que la evidencia
+que se registra es la ejecución del 2026-11-07, la primera con `banking daily`
+sobre `main`. Además el cron declarado a las 06:00 UTC aterriza entre las 12:30 y
+las 14:35 UTC en las ejecuciones observadas, retraso de la cola de GitHub que no
+depende del repositorio y que queda anotado en `docs/context.md`.
 
 ---
 
