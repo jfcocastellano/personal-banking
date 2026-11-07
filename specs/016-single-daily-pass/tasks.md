@@ -75,3 +75,23 @@ _(se completa al cerrar cada tarea: commit, gates y evidencia)_
 - Suelo fijo `_MAX_BALANCE_ROWS = 8`: un panel que se achica (cuenta dada de baja, banco sin sesión) no deja filas viejas.
 - Test que cambió de contrato: `test_second_run_clears_only_the_expense_region_and_writes_only_expense_rows` pasa a `..._and_the_panel`; la supervivencia ahora se afirma sobre `G`/`H` (que ningún rango los mencione) en vez de sobre una celda de `J:K`, porque FR-004 reemplaza lo tipeado a mano en el panel.
 - Deuda declarada: la creación formatea `K10:K<total>` y el refresco `K4:K<última>`, así que tras la primera pasada los totales de fórmula del resumen quedan con formato de euros. Cosmético y benigno; unificarlo requiere tocar `_apply_light_formatting` y su test.
+
+### T004 — cerrada
+
+- Commit: `feat(cli): add the banking daily subcommand`.
+- RED observado: `ImportError: cannot import name 'daily' from 'banking.cli'` y, en `test_main`, `invalid choice: 'daily' (choose from 'secrets', 'sync', 'layout')`.
+- GREEN: 327 tests unitarios; `ruff check`, `ruff format --check` y `mypy src` limpios; `banking --help` lista los cuatro subcomandos.
+- Tabla de exit codes implementada: 0 éxito u omitida, 1 fallo total, 2 fallo de Sheets (dice la etapa), 3 parcial con aviso, 4 aviso no entregado.
+- El aviso solo se construye en los caminos de fallo (`EmailNotifier` reusable de `cli/sync.py`); `BankPass` se adapta a `BankOutcome` para el notificador, que sigue sin cambios.
+- Ronda de pulido: `handle` quedó con la firma de sus hermanos (`args: argparse.Namespace, notifier=None`); se borró el parser interno y el rechazo de flags se prueba ahora en `test_main` contra el parser real.
+- Decisión fuera del brief: el `tab_name` del correo es el de la pestaña cruda, y la etapa fallida viaja en `sheets_error`.
+
+### T005 — cerrada
+
+- Commit: `ci(sync): run the daily pass and report both tabs in the summary`.
+- RED observado: 3 tests en rojo, entre ellos `assert 'python -m banking daily' in ...python -m banking sync...`.
+- GREEN: 328 tests unitarios (327 + 1 nuevo), guardas de secretos intactas (5 passed), YAML válido, `ruff`/`format`/`mypy` limpios.
+- Paso de ejecución: `python -m banking daily 2>&1 | tee "$RUNNER_TEMP/sync-output.log"` con `PIPESTATUS[0]` sin cambios.
+- Resumen: la cabecera `Pasada diaria ...` se copia entera (no se re-parsea prosa) y aporta bancos X/Y, movimientos por pestaña y duración; tres `grep -c` aportan bancos sin sesión, bancos con fallo y saldos con fallo.
+- Acoplamiento aceptado y pinchado por test: los `grep` matchean las líneas de log de `banking.daily`; renombrarlas obliga a tocar `sync.yml`.
+- Limitación conocida: en el camino `NOTHING_TO_SYNC` la cabecera no trae conteos porque no se escribió nada; es el comportamiento del comando, no del resumen.
