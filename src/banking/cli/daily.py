@@ -17,8 +17,8 @@ from __future__ import annotations
 import argparse
 import sys
 from collections.abc import Sequence
-from datetime import date
 
+from banking.cli.common import current_tab_name, notify_and_exit, print_not_onboarded_note
 from banking.daily import (
     BankPass,
     DailySheetsError,
@@ -26,10 +26,9 @@ from banking.daily import (
     NoBankFetchedError,
     run_daily,
 )
-from banking.notify import DeliveryStatus, EmailNotifier
+from banking.notify import EmailNotifier
 from banking.sync import BankOutcome, OverallStatus
 
-_NOTIFICATION_FAILED_MESSAGE = "ERROR (notificación): no se pudo enviar el email de aviso"
 # Prefix for the reason a succeeded bank still carries: its movements arrived,
 # so the run is not failed, but the balance the run could not read is not
 # silently dropped from the failure email.
@@ -120,14 +119,6 @@ def _print_report(passes: Sequence[BankPass]) -> None:
         print(_bank_report_line(run))
 
 
-def _print_not_onboarded_note(passes: Sequence[BankPass]) -> None:
-    """Name the banks without a PSD2 session, worded so it is not read as a failure."""
-    names = [run.bank_name for run in passes if run.not_onboarded]
-    if not names:
-        return
-    print(f"  Bancos sin sesión PSD2 (no cuentan como fallo): {', '.join(names)}")
-
-
 def _print_summary(result: DailySummary, notifier: EmailNotifier | None) -> int:
     """Print the run summary and per-bank report, notifying on partial failure."""
     succeeded = sum(1 for run in result.passes if _succeeded(run))
@@ -156,15 +147,17 @@ def _print_summary(result: DailySummary, notifier: EmailNotifier | None) -> int:
         )
 
     _print_report(result.passes)
-    _print_not_onboarded_note(result.passes)
+    outcomes = _as_outcomes(result.passes)
+    print_not_onboarded_note(outcomes)
 
     if exit_code == 3:
-        notification_exit = _notify_and_exit(
+        notification_exit = notify_and_exit(
             notifier,
-            passes=result.passes,
+            outcomes,
             sheets_error=None,
             tab_name=result.raw_tab_name,
             duration_seconds=result.duration_seconds,
+            notifier_factory=EmailNotifier,
         )
         if notification_exit is not None:
             return notification_exit
@@ -174,12 +167,13 @@ def _print_summary(result: DailySummary, notifier: EmailNotifier | None) -> int:
 def _finish_total_failure(notifier: EmailNotifier | None, exc: NoBankFetchedError) -> int:
     """Print the total-failure error, notify, and return the exit code."""
     print(f"ERROR: la pasada diaria falló — {exc}", file=sys.stderr)
-    notification_exit = _notify_and_exit(
+    notification_exit = notify_and_exit(
         notifier,
-        passes=exc.passes or [],
+        _as_outcomes(exc.passes or []),
         sheets_error=None,
-        tab_name=exc.raw_tab_name or _current_raw_tab_name(),
+        tab_name=exc.raw_tab_name or current_tab_name(),
         duration_seconds=0.0,
+        notifier_factory=EmailNotifier,
     )
     return notification_exit if notification_exit is not None else 1
 
@@ -187,12 +181,13 @@ def _finish_total_failure(notifier: EmailNotifier | None, exc: NoBankFetchedErro
 def _finish_sheets_failure(notifier: EmailNotifier | None, exc: DailySheetsError) -> int:
     """Print the Sheets error with its stage, notify, and return the exit code."""
     print(f"ERROR (Sheets, etapa {exc.stage}): {exc}", file=sys.stderr)
-    notification_exit = _notify_and_exit(
+    notification_exit = notify_and_exit(
         notifier,
-        passes=exc.passes or [],
+        _as_outcomes(exc.passes or []),
         sheets_error=f"etapa {exc.stage}: {exc}",
-        tab_name=exc.tab_name or _current_raw_tab_name(),
+        tab_name=exc.tab_name or current_tab_name(),
         duration_seconds=0.0,
+        notifier_factory=EmailNotifier,
     )
     return notification_exit if notification_exit is not None else 2
 
@@ -227,34 +222,3 @@ def _as_outcomes(passes: Sequence[BankPass]) -> list[BankOutcome]:
             )
         )
     return outcomes
-
-
-def _notify_and_exit(
-    notifier: EmailNotifier | None,
-    passes: Sequence[BankPass],
-    sheets_error: str | None,
-    tab_name: str,
-    duration_seconds: float,
-) -> int | None:
-    """Send the failure email and translate a delivery failure into exit code 4.
-
-    Returns:
-        ``4`` when the delivery failed, ``None`` when it was sent or skipped
-        (in which case the caller keeps the daily outcome's exit code).
-    """
-    email_notifier = notifier if notifier is not None else EmailNotifier()
-    status = email_notifier.notify_failure(
-        outcomes=_as_outcomes(passes),
-        sheets_error=sheets_error,
-        tab_name=tab_name,
-        duration_seconds=duration_seconds,
-    )
-    if status is DeliveryStatus.FAILED:
-        print(_NOTIFICATION_FAILED_MESSAGE, file=sys.stderr)
-        return 4
-    return None
-
-
-def _current_raw_tab_name() -> str:
-    """Return this month's raw tab name, used when an exception carries no context."""
-    return date.today().strftime("%Y-%m")

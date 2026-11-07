@@ -5,12 +5,10 @@ from __future__ import annotations
 import argparse
 import sys
 from collections.abc import Sequence
-from datetime import date
 
-from banking.notify import DeliveryStatus, EmailNotifier
+from banking.cli.common import current_tab_name, notify_and_exit, print_not_onboarded_note
+from banking.notify import EmailNotifier
 from banking.sync import AllBanksFailedError, BankOutcome, OverallStatus, SheetsSyncError, run_sync
-
-_NOTIFICATION_FAILED_MESSAGE = "ERROR (notificación): no se pudo enviar el email de aviso"
 
 
 def add_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
@@ -82,27 +80,20 @@ def handle(args: argparse.Namespace, notifier: EmailNotifier | None = None) -> i
         else:
             print(f"  - {outcome.bank_name}: FALLÓ — {outcome.failure_reason}")
 
-    _print_not_onboarded_note(result.outcomes)
+    print_not_onboarded_note(result.outcomes)
 
     if exit_code == 3:
-        notification_exit = _notify_and_exit(
+        notification_exit = notify_and_exit(
             notifier,
-            outcomes=result.outcomes,
+            result.outcomes,
             sheets_error=None,
             tab_name=result.tab_name,
             duration_seconds=result.duration_seconds,
+            notifier_factory=EmailNotifier,
         )
         if notification_exit is not None:
             return notification_exit
     return exit_code
-
-
-def _print_not_onboarded_note(outcomes: Sequence[BankOutcome]) -> None:
-    """Name the banks without a PSD2 session, worded so it is not read as a failure."""
-    names = [outcome.bank_name for outcome in outcomes if outcome.not_onboarded]
-    if not names:
-        return
-    print(f"  Bancos sin sesión PSD2 (no cuentan como fallo): {', '.join(names)}")
 
 
 def _total_failure_headline(outcomes: Sequence[BankOutcome]) -> str:
@@ -124,12 +115,13 @@ def _finish_total_failure(notifier: EmailNotifier | None, exc: AllBanksFailedErr
     """Print the IT5 error for a total failure, notify, and return the exit code."""
     print(_total_failure_headline(exc.outcomes or []), file=sys.stderr)
     print(f"  {exc}", file=sys.stderr)
-    notification_exit = _notify_and_exit(
+    notification_exit = notify_and_exit(
         notifier,
-        outcomes=exc.outcomes or [],
+        exc.outcomes or [],
         sheets_error=None,
-        tab_name=exc.tab_name or _current_tab_name(),
+        tab_name=exc.tab_name or current_tab_name(),
         duration_seconds=0.0,
+        notifier_factory=EmailNotifier,
     )
     return notification_exit if notification_exit is not None else 1
 
@@ -137,42 +129,12 @@ def _finish_total_failure(notifier: EmailNotifier | None, exc: AllBanksFailedErr
 def _finish_sheets_failure(notifier: EmailNotifier | None, exc: SheetsSyncError) -> int:
     """Print the IT5 error for a Sheets failure, notify, and return the exit code."""
     print(f"ERROR (Sheets): {exc}", file=sys.stderr)
-    notification_exit = _notify_and_exit(
+    notification_exit = notify_and_exit(
         notifier,
-        outcomes=exc.outcomes or [],
+        exc.outcomes or [],
         sheets_error=str(exc),
-        tab_name=exc.tab_name or _current_tab_name(),
+        tab_name=exc.tab_name or current_tab_name(),
         duration_seconds=0.0,
+        notifier_factory=EmailNotifier,
     )
     return notification_exit if notification_exit is not None else 2
-
-
-def _notify_and_exit(
-    notifier: EmailNotifier | None,
-    outcomes: list[BankOutcome],
-    sheets_error: str | None,
-    tab_name: str,
-    duration_seconds: float,
-) -> int | None:
-    """Send the failure email and translate a delivery failure into exit code 4.
-
-    Returns:
-        ``4`` when the delivery failed, ``None`` when it was sent or skipped
-        (in which case the caller keeps the sync outcome's exit code).
-    """
-    email_notifier = notifier if notifier is not None else EmailNotifier()
-    status = email_notifier.notify_failure(
-        outcomes=outcomes,
-        sheets_error=sheets_error,
-        tab_name=tab_name,
-        duration_seconds=duration_seconds,
-    )
-    if status is DeliveryStatus.FAILED:
-        print(_NOTIFICATION_FAILED_MESSAGE, file=sys.stderr)
-        return 4
-    return None
-
-
-def _current_tab_name() -> str:
-    """Return this month's tab name, used when an exception carries no context."""
-    return date.today().strftime("%Y-%m")
