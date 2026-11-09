@@ -62,6 +62,13 @@ one extra transactions page.
       Evidence: `5d09bb7`.
 - [x] T6 — Gates (`pytest`, `ruff check`, `ruff format --check`, `mypy src/`) and a ready PR.
 
+## Landed
+
+`4c2a98c` — PR #29 squash-merged into `main` on 2026-11-07. The merged tree is `e4c722e5`, exactly
+the candidate tree of `review-cd24dda2209081c0` (tier medium, lens `review-reliability`, zero
+findings, approved and acknowledged). CI `ci` was green on the PR head. Local `main` was
+fast-forwarded; no open pull requests remain.
+
 ## Adjudication: `R4-STALE-SUMMARY`
 
 **The claim** (native review lineage `review-74be087fe6327774`, CRITICAL, lens `review-resilience`):
