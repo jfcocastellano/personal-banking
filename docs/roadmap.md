@@ -470,7 +470,7 @@ IT5 solo necesita el patrón de IT2; IT6 necesita el pipeline de IT4.
   propia guía la rotula IT8; no se registró como iteración acá.)*
 
 - **Definition of Done**:
-  - Comando `banking daily`, sin argumentos: el mes es siempre el de
+  - Comando `banking daily`, sin parámetro de mes: el mes es siempre el de
     ejecución (el backfill sigue en `layout --month`)
   - Una sola lectura por banco y por etapa (movimientos + saldo), con
     aislamiento entre bancos y entre etapas: un fallo de saldo no descarta

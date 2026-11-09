@@ -83,7 +83,7 @@ El límite superior del rango sale de `build_month_grid` (la geometría es la ú
 
 ### CLI y exit codes (FR-009)
 
-`banking daily`, sin argumentos. Tabla idéntica a `sync`:
+`banking daily`, sin parámetro de mes: su única opción (`--summary-json PATH`, añadida después para que el workflow no re-parseara los logs) no cambia qué imprime ni qué escribe. Tabla idéntica a `sync`:
 
 | Situación | Exit |
 | --- | --- |

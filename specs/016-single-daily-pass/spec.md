@@ -119,7 +119,7 @@ El propietario recibe un correo cuando un banco falla de verdad, y no lo recibe 
 
 ## Assumptions
 
-- El mes que escribe la pasada diaria es el mes de la fecha de ejecución; no hay parámetro de mes en `daily` (para backfills se usa `layout`).
+- El mes que escribe la pasada diaria es el mes de la fecha de ejecución; no hay parámetro de mes en `daily` (para backfills se usa `layout`). El único flag es de presentación: `--summary-json PATH` escribe el resumen de la corrida en un documento JSON (`banking.summary/v1`) sin cambiar la salida por consola ni los exit codes.
 - El límite PSD2 de 4 requests por cuenta y día sigue vigente. La pasada diaria hace 2 llamadas de datos y una consulta de sesión por cuenta, es decir 3 GET más paginación, así que le queda 1 GET de margen (alcanza para una página extra de movimientos). Si esa consulta de sesión cuenta contra el límite **no está verificado**. Una sola pasada sigue gastando menos que encadenar `sync` y `layout` (5 GET), y reutilizar los movimientos evita una segunda lectura de datos.
 - `G:H` sigue siendo manual; esta feature no introduce categorización automática.
 - El snapshot diario de saldos (histórico fecha × cuenta) es una feature posterior y no se implementa acá.
