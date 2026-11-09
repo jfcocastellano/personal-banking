@@ -188,6 +188,29 @@ def _join_remittance_information(raw_remittance: object) -> str:
     return str(raw_remittance) if raw_remittance else ""
 
 
+def _log_seen_transaction_fields(bank_name: str, record_count: int, field_names: set[str]) -> None:
+    """Log which transaction fields a bank actually returned, names only.
+
+    Deliberately INFO: the Actions run log is where the answer has to be
+    readable, and a scheduled run cannot raise ``LOG_LEVEL``. Only field names
+    reach the log — never values, so no amount, date, remittance text or
+    reference can leak.
+
+    Args:
+        bank_name: The bank the records belong to.
+        record_count: How many transaction records the fetch saw.
+        field_names: The union of the key names present in those records.
+    """
+    if record_count == 0:
+        return
+    logger.info(
+        "Connector %s: transaction fields, records=%d, keys=%s",
+        bank_name,
+        record_count,
+        ",".join(sorted(field_names)),
+    )
+
+
 def _parse_transaction(raw: dict[str, Any]) -> Transaction | None:
     """Parse one API transaction record into a Transaction, or None if malformed."""
     try:
@@ -543,6 +566,8 @@ class EnableBankingConnector:
         credential, account_id = self._resolve_session(start_date, end_date)
 
         results: dict[tuple[date, Decimal, str], Transaction] = {}
+        seen_field_names: set[str] = set()
+        seen_record_count = 0
         continuation_key: str | None = None
         url = f"{_BASE_URL}/accounts/{account_id}/transactions"
 
@@ -577,6 +602,8 @@ class EnableBankingConnector:
             body = response.json()
 
             for raw_tx in body.get("transactions", []):
+                seen_record_count += 1
+                seen_field_names.update(raw_tx.keys())
                 if raw_tx.get("status") != "BOOK":
                     continue
                 tx = _parse_transaction(raw_tx)
@@ -605,6 +632,7 @@ class EnableBankingConnector:
             )
 
         transactions = list(results.values())
+        _log_seen_transaction_fields(self.BANK_NAME, seen_record_count, seen_field_names)
         logger.info(
             "Connector %s: range %s to %s, %d records retrieved, status=success",
             self.BANK_NAME,

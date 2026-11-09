@@ -190,13 +190,136 @@ def test_success_logs_structured_record(
     with caplog.at_level(logging.INFO, logger="banking.connectors.enable_banking"):
         connector.fetch_transactions(date(2026, 8, 1), date(2026, 8, 31))
 
-    info_records = [r for r in caplog.records if r.levelno == logging.INFO]
-    assert len(info_records) == 1
-    message = info_records[0].getMessage()
+    success_records = [
+        record.getMessage()
+        for record in caplog.records
+        if record.levelno == logging.INFO and "records retrieved" in record.getMessage()
+    ]
+    assert len(success_records) == 1
+    message = success_records[0]
     assert "Fake Bank" in message
     assert "2026-08-01" in message
     assert "2026-08-31" in message
     assert "1" in message
+
+
+# ---------------------------------------------------------------------------
+# Registrar qué campos devuelve cada banco, sin filtrar valores
+# ---------------------------------------------------------------------------
+
+
+def _field_probe_lines(caplog) -> list[str]:
+    """Only the field-name probe lines, so value assertions cannot hit other logs."""
+    return [
+        record.getMessage()
+        for record in caplog.records
+        if record.levelno == logging.INFO and "keys=" in record.getMessage()
+    ]
+
+
+def test_fetch_logs_the_field_names_each_record_carries(
+    caplog, eb_config_dir, fake_session_id_in_store, mock_http_client
+):
+    record_payload = {
+        "status": "BOOK",
+        "booking_date": "2026-08-15",
+        "transaction_amount": {"amount": "42.50", "currency": "EUR"},
+        "credit_debit_indicator": "DBIT",
+        "remittance_information": ["NOMINA CONFIDENCIAL SL"],
+        "merchant_category_code": "5411",
+        "entry_reference": "REF-UNICA-0001",
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200, json={"transactions": [record_payload], "continuation_key": None}
+        )
+
+    connector = _FakeConnector(http_client=mock_http_client(handler))
+    with caplog.at_level(logging.INFO, logger="banking.connectors.enable_banking"):
+        connector.fetch_transactions(date(2026, 8, 1), date(2026, 8, 31))
+
+    probe_lines = _field_probe_lines(caplog)
+    assert len(probe_lines) == 1
+    line = probe_lines[0]
+    assert "Fake Bank" in line
+    assert "records=1" in line
+    for field_name in ("status", "merchant_category_code", "entry_reference"):
+        assert field_name in line, f"the probe must name {field_name}: {line}"
+    for value in (
+        "5411",
+        "REF-UNICA-0001",
+        "NOMINA CONFIDENCIAL SL",
+        "42.50",
+        "2026-08-15",
+    ):
+        assert value not in line, f"the probe must never log values, leaked {value}: {line}"
+
+
+def test_fetch_logs_no_field_probe_when_the_account_returns_no_records(
+    caplog, eb_config_dir, fake_session_id_in_store, mock_http_client
+):
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"transactions": [], "continuation_key": None})
+
+    connector = _FakeConnector(http_client=mock_http_client(handler))
+    with caplog.at_level(logging.INFO, logger="banking.connectors.enable_banking"):
+        result = connector.fetch_transactions(date(2026, 8, 1), date(2026, 8, 31))
+
+    assert result == []
+    assert _field_probe_lines(caplog) == []
+
+
+def test_fetch_logs_the_field_probe_even_when_every_record_is_filtered_out(
+    caplog, eb_config_dir, fake_session_id_in_store, mock_http_client
+):
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "transactions": [_raw_tx(status="PDNG", description="Pendiente")],
+                "continuation_key": None,
+            },
+        )
+
+    connector = _FakeConnector(http_client=mock_http_client(handler))
+    with caplog.at_level(logging.INFO, logger="banking.connectors.enable_banking"):
+        result = connector.fetch_transactions(date(2026, 8, 1), date(2026, 8, 31))
+
+    assert result == []
+    probe_lines = _field_probe_lines(caplog)
+    assert len(probe_lines) == 1
+    assert "records=1" in probe_lines[0]
+    assert "status" in probe_lines[0]
+
+
+def test_fetch_logs_the_field_probe_once_per_fetch_not_once_per_page(
+    caplog, eb_config_dir, fake_session_id_in_store, mock_http_client
+):
+    call_count = {"n": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        call_count["n"] += 1
+        if call_count["n"] == 1:
+            return httpx.Response(
+                200,
+                json={
+                    "transactions": [_raw_tx(description="Page1 Tx")],
+                    "continuation_key": "page2",
+                },
+            )
+        return httpx.Response(
+            200,
+            json={"transactions": [_raw_tx(description="Page2 Tx")], "continuation_key": None},
+        )
+
+    connector = _FakeConnector(http_client=mock_http_client(handler))
+    with caplog.at_level(logging.INFO, logger="banking.connectors.enable_banking"):
+        connector.fetch_transactions(date(2026, 8, 1), date(2026, 8, 31))
+
+    probe_lines = _field_probe_lines(caplog)
+    assert len(probe_lines) == 1
+    assert "records=2" in probe_lines[0]
 
 
 def test_start_after_end_raises_before_http_call(
