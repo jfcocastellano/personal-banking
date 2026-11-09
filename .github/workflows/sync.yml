@@ -119,21 +119,26 @@ jobs:
       # 3. El mismo comando que en local: el scheduler no tiene lógica propia.
       #    `banking daily` hace en una sola pasada lo que antes hacían `sync` y
       #    `layout`: pestaña cruda y pestaña de layout del mes en curso.
-      #    `set +e` evita abortar antes de publicar el resumen, y PIPESTATUS[0]
-      #    recupera el exit code del proceso (no el de tee).
+      #    `--summary-json` escribe el resumen estructurado que lee el paso 4, de
+      #    modo que el workflow nunca re-parsea prosa de log. `set +e` evita abortar
+      #    antes de publicar el resumen, y PIPESTATUS[0] recupera el exit code del
+      #    proceso (no el de tee).
       - name: Ejecutar sincronización
         id: sync
         run: |
           set +e
           set -o pipefail
-          python -m banking daily 2>&1 | tee "$RUNNER_TEMP/sync-output.log"
+          python -m banking daily --summary-json "$RUNNER_TEMP/banking-summary.json" 2>&1 | tee "$RUNNER_TEMP/sync-output.log"
           code=${PIPESTATUS[0]}
           echo "exit_code=$code" >> "$GITHUB_OUTPUT"
           exit 0
 
-      # 4. Resumen en la página de la ejecución. Se construye con la salida que
-      #    el propio proceso imprime (bancos, movimientos por pestaña, fallos y
-      #    duración), sin lógica de CI dentro del código Python.
+      # 4. Resumen en la página de la ejecución. Los datos salen del documento
+      #    JSON que el propio comando escribe con `--summary-json` (esquema
+      #    `banking.summary/v1`): el workflow lee campos, no prosa. Si el fichero
+      #    falta o no se puede leer (el proceso murió antes de escribirlo), cada
+      #    conteo degrada a 0 y la cabecera a una frase de reserva; el extracto de
+      #    log del final es sólo ilustrativo.
       - name: Publicar resumen
         if: always()
         env:
@@ -141,24 +146,47 @@ jobs:
         run: |
           set -u
           log="$RUNNER_TEMP/sync-output.log"
-          # `banking daily` imprime una única línea de resumen que ya lleva los
-          # bancos sincronizados (X/Y), los movimientos escritos en la pestaña
-          # cruda, las filas escritas en la de layout y la duración. Se copia
-          # entera: re-parsear esa prosa sería frágil.
-          headline=$(grep -m1 -E '^Pasada diaria' "$log" 2>/dev/null || true)
-          headline=${headline:-"(el proceso no llegó a imprimir el resumen de la pasada)"}
-          # Los conteos salen de las líneas que `banking.daily` emite una vez por
-          # banco y etapa, así que también existen en el fallo total, donde el
-          # comando no imprime el reporte por banco:
-          #   "Daily pass stage failed: bank=<banco> stage=transactions reason=..."
-          #   "Daily pass skipped stage: bank=<banco> stage=transactions not onboarded ..."
-          # Cada banco aporta como mucho una de cada, de ahí que sean conteos.
-          without_session=$(grep -c -E 'Daily pass skipped stage: .*stage=transactions' "$log" 2>/dev/null || true)
+          summary="$RUNNER_TEMP/banking-summary.json"
+          # Un único helper imprime los cuatro campos en una línea, con la
+          # cabecera al final: es el único valor con espacios y `read` le entrega
+          # el resto de la línea. Sin fichero, o con un JSON ilegible, devuelve 0
+          # por conteo y la frase de reserva, nunca un error bajo `set -u`.
+          # (El cuerpo del heredoc va a la indentación del bloque para que llegue
+          # a Python sin indentación: YAML ya le quitó la del paso.)
+          read -r without_session failed_banks failed_balances headline < <(
+            python - "$summary" <<'PY'
+          import json
+          import pathlib
+          import sys
+
+          FALLBACK = "(el proceso no llegó a imprimir el resumen de la pasada)"
+
+
+          def count(document: dict, key: str) -> int:
+              try:
+                  return int(document.get(key, 0) or 0)
+              except (TypeError, ValueError):
+                  return 0
+
+
+          try:
+              document = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
+          except (OSError, ValueError):
+              document = {}
+          if not isinstance(document, dict):
+              document = {}
+          print(
+              count(document, "banks_not_onboarded"),
+              count(document, "banks_failed"),
+              count(document, "balance_failures"),
+              document.get("headline") or FALLBACK,
+          )
+          PY
+          )
           without_session=${without_session:-0}
-          failed_banks=$(grep -c -E 'Daily pass stage failed: .*stage=transactions' "$log" 2>/dev/null || true)
           failed_banks=${failed_banks:-0}
-          failed_balances=$(grep -c -E 'Daily pass stage failed: .*stage=balance' "$log" 2>/dev/null || true)
           failed_balances=${failed_balances:-0}
+          headline=${headline:-"(el proceso no llegó a imprimir el resumen de la pasada)"}
           {
             echo "## Sincronización bancaria — $(date -u +%Y-%m-%d)"
             echo

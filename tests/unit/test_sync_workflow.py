@@ -18,6 +18,8 @@ Growth history (Test-First, Principle II):
 * T014 — published step summary (US3).
 * T005 of ``016-single-daily-pass`` — the scheduled command is `banking daily`
   and the summary reports what the daily pass produces (FR-010, FR-011).
+* T3 of ``016-summary-json`` — the summary is read from the JSON document that
+  `banking daily --summary-json` writes, not from the process log lines.
 """
 
 from __future__ import annotations
@@ -311,21 +313,58 @@ def test_summary_lists_banks_movements_failures_and_duration() -> None:
 
 
 def test_summary_reports_both_tabs_absences_failures_and_duration() -> None:
-    """FR-011: banks, both tabs, banks without a session, failures and duration."""
+    """FR-011: banks, both tabs, banks without a session, failures and duration.
+
+    Every value comes from the JSON document the daily pass writes, so the
+    workflow no longer depends on the wording of any log line.
+    """
     script = _run_text("Publicar resumen")
     assert "Bancos sincronizados" in script, "Summary does not report the synced banks"
     assert "movimientos por pestaña" in script, "Summary does not report both tabs"
     assert "duración" in script, "Summary does not report the duration"
     assert "Bancos sin sesión PSD2" in script, "Summary does not report banks without a session"
     assert "Bancos con fallo" in script, "Summary does not report the failed banks"
-    # The counts come from the log lines `banking.daily` emits once per bank and
-    # stage, so they also exist on the total-failure path, where the command
-    # prints no per-bank report.
-    assert "Daily pass skipped stage" in script, "No not-onboarded source line"
-    assert "Daily pass stage failed" in script, "No stage-failure source line"
-    assert "stage=transactions" in script, "Failures are not sourced from the bank stages"
-    assert "stage=balance" in script, "Balance failures are not sourced from the log"
-    assert "Pasada diaria" in script, "The headline (tabs, rows, duration) is not echoed"
+    # The JSON document is the only data source: the three counters, the
+    # headline and the banks come from it, so the summary survives any change
+    # to the command's log wording.
+    assert "banking-summary.json" in script, "No summary document source"
+    assert "json.loads" in script, "The summary does not parse the JSON document"
+    assert "banks_not_onboarded" in script, "Banks without a session are not read from the JSON"
+    assert "banks_failed" in script, "Failed banks are not read from the JSON"
+    assert "balance_failures" in script, "Balance failures are not read from the JSON"
+    assert "headline" in script, "The headline is not read from the JSON"
+
+
+def test_summary_no_longer_scrapes_the_process_log() -> None:
+    """The log is illustrative only: no counter and no headline is grepped out."""
+    script = _run_text("Publicar resumen")
+    assert "Daily pass skipped stage" not in script, "Still counting a log line"
+    assert "Daily pass stage failed" not in script, "Still counting a log line"
+    assert "grep -c" not in script, "Still counting log matches"
+    assert "grep -m1" not in script, "Still scraping the headline out of the log"
+    assert "'^Pasada diaria'" not in script, "Still scraping the headline out of the log"
+
+
+def test_sync_step_asks_for_the_summary_document() -> None:
+    """The command is asked for the JSON document the summary step reads."""
+    script = _run_text("Ejecutar sincronización")
+    assert "--summary-json" in script, "The daily pass is not asked for a summary document"
+    assert "banking-summary.json" in script, "The summary document has no fixed path"
+    # The pipeline that captures output and the exit code is untouched.
+    assert "tee" in script
+    assert "PIPESTATUS[0]" in script
+    assert "set +e" in script
+
+
+def test_summary_degrades_gracefully_without_the_summary_document() -> None:
+    """A process that died before writing the document still publishes a summary."""
+    script = _run_text("Publicar resumen")
+    assert "except (OSError, ValueError)" in script, "An unreadable document is not tolerated"
+    assert "without_session=${without_session:-0}" in script, "Unset counters break `set -u`"
+    assert "headline=${headline:-" in script, "A missing headline is not defaulted"
+    assert "el proceso no llegó a imprimir el resumen de la pasada" in script, (
+        "No fallback headline for a missing document"
+    )
 
 
 def test_summary_degrades_gracefully_without_process_output() -> None:
