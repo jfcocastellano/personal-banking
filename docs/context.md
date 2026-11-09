@@ -161,6 +161,39 @@ Enable Banking como agregador PSD2. Actúa de intermediario entre el proceso y l
 | Paginación | Parámetro `continuation_key` en el endpoint de transacciones |
 | Config local | `~/.config/banca-personal/eb-config.json` (`app_id` + ruta a clave RSA). Los `session_id` (uno por banco) y el resto de secretos se leen del `SecretStore` cifrado, respaldado por el fichero `.env` |
 
+**Campos de transacción disponibles**
+
+El objeto `Transaction` de Enable Banking exige `transaction_amount`,
+`credit_debit_indicator` y `status`. Todo lo demás es **opcional**: el banco
+decide si lo manda, y puede no mandarlo nunca.
+
+| Campo | Tipo | Uso para agrupar |
+|-------|------|------------------|
+| `merchant_category_code` | string | Categoría ISO 18245 del comercio. Lo más parecido a una etiqueta nativa. |
+| `bank_transaction_code` | `{description, code, sub_code}` | Categorización propia de la entidad, p. ej. `Utlandsbetalning / 12 / 32`. |
+| `entry_reference` | string | Único **e inmutable** por cuenta; permite reconocer el mismo movimiento entre sesiones PSU. |
+| `creditor` / `debtor` | `PartyIdentification` | Nombre de la contraparte. |
+| `value_date`, `transaction_date` | date | Fechas más finas que `booking_date`. |
+| `balance_after_transaction` | `AmountType` | Saldo corriente por movimiento. |
+| `note`, `reference_number`, `reference_number_schema`, `exchange_rate` | varios | Detalle accesorio. |
+| `transaction_id` | string | **Inservible como id**: la referencia dice que no identifica la transacción de forma única y que puede cambiar. |
+
+Hoy el conector normaliza solo `booking_date`,
+`transaction_amount.{amount,currency}`, `credit_debit_indicator` y
+`remittance_information`; el resto se descarta en silencio, porque
+`Transaction` no tiene dónde guardarlo.
+
+**La población real por banco no está verificada.** Que la API documente un
+campo no significa que ING España o Revolut lo manden. Esa es la única
+pregunta abierta y no cuesta ninguna petición PSD2 extra: el payload ya llega
+en cada corrida. Para responderla, cada `fetch_transactions` registra una
+línea `INFO` con el banco, la cantidad de registros vistos y los **nombres**
+de campo, ordenados; nunca los valores, así que no hay importes, fechas ni
+textos de `remittance_information` en el log.
+
+Mientras esa medición no exista, la categorización manual de `G:H` en la
+pestaña de gastos se mantiene tal cual: no hay base para reemplazarla.
+
 **Google Sheets**
 Autenticación mediante cuenta de servicio de Google Cloud (service account). El JSON de credenciales se almacena como GitHub Secret. El Sheet se comparte con el email de la cuenta de servicio. No requiere intervención humana en ninguna ejecución.
 

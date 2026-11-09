@@ -512,8 +512,14 @@ orden, ni fecha. Están acá para no perderlas de vista.
   con la foto de la última corrida. Es lo que resolvería también el mes
   anterior que deja de actualizarse.
 - **Categorización automática de las 49 filas del catálogo**: hoy `G:H`
-  se llena a mano porque ninguna API informa la categoría; implicaría
-  reglas propias sobre la descripción del movimiento.
+  se llena a mano. La premisa original ("ninguna API informa la
+  categoría") es falsa: Enable Banking documenta `merchant_category_code`
+  (ISO 18245) y `bank_transaction_code` como campos **opcionales** de la
+  transacción. Falta medir si ING España y Revolut los informan; hasta
+  que esa medición exista, la categorización manual de `G:H` se queda
+  como está. Automatizarla implicaría además reglas propias sobre la
+  descripción del movimiento, para los casos en que el banco no mande
+  el campo.
 - **Conector de N26**: la cuenta aparece en la hoja original y no tiene
   conector; agregarlo es replicar el patrón de los otros cuatro (una clave
   `ENABLE_BANKING_SESSION_ID_N26` y una clase, más su consentimiento PSD2).
