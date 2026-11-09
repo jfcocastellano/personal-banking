@@ -754,3 +754,52 @@ def test_success_log_separates_balance_rows_from_reported_balances(
     assert len(succeeded) == 1
     assert "balance_rows=2" in succeeded[0]
     assert "balances_reported=1" in succeeded[0]
+
+
+# --- T2: la pestaña cruda se lee del movimiento más viejo al más nuevo ------
+
+
+def _transaction_on(booking_date: date, description: str, amount: str) -> Transaction:
+    return Transaction(
+        booking_date=booking_date,
+        amount=Decimal(amount),
+        currency="EUR",
+        description=description,
+    )
+
+
+def test_run_daily_writes_the_raw_tab_oldest_first_across_banks() -> None:
+    """The daily call path flattens banks in one ascending order, not bank by bank."""
+    ing = _FakeConnector(
+        "ING España",
+        transactions=[
+            _transaction_on(date(2026, 11, 9), "ING última", "10.00"),
+            _transaction_on(date(2026, 11, 5), "ING primera", "10.00"),
+        ],
+        balance=_balance("120.00"),
+    )
+    revolut = _FakeConnector(
+        "Revolut",
+        transactions=[
+            _transaction_on(date(2026, 11, 5), "Revolut mismo día", "-5.00"),
+            _transaction_on(date(2026, 11, 2), "Revolut primera", "-1.00"),
+        ],
+        balance=_balance("80.00"),
+    )
+    raw_writer = _RecordingWriter()
+
+    run_daily(
+        connectors=[ing, revolut],
+        writer=raw_writer,
+        layout_writer=_RecordingLayoutWriter(),
+        document_id=_DOCUMENT_ID,
+        today=_END,
+    )
+
+    raw_rows = raw_writer.calls[0]["rows"]
+    assert [(row[0], row[1], row[2]) for row in raw_rows] == [
+        ("2026-11-02", "Revolut", "Revolut primera"),
+        ("2026-11-05", "ING España", "ING primera"),
+        ("2026-11-05", "Revolut", "Revolut mismo día"),
+        ("2026-11-09", "ING España", "ING última"),
+    ]

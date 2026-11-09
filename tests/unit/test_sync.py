@@ -37,6 +37,7 @@ from banking.sync import (
     OverallStatus,
     SheetsSyncError,
     run_sync,
+    transaction_rows_for_banks,
 )
 
 _HEADERS = ["Fecha de liquidación", "Banco", "Descripción", "Importe", "Divisa"]
@@ -677,3 +678,60 @@ def test_run_sync_rejects_empty_connectors_before_touching_configuration(
 
     with pytest.raises(NoConnectorsError):
         run_sync(connectors=[], document_id=None)
+
+
+# --- T2: la pestaña cruda se lee del movimiento más viejo al más nuevo ------
+
+
+def test_transaction_rows_for_banks_orders_across_banks_ascending() -> None:
+    """One ascending order for every bank: date, bank, description, then amount."""
+    ing_txs = [
+        Transaction(date(2026, 8, 10), Decimal("-4.00"), "EUR", "Compra"),
+        Transaction(date(2026, 8, 10), Decimal("-12.30"), "EUR", "Compra"),
+        Transaction(date(2026, 8, 1), Decimal("900.00"), "EUR", "Nomina"),
+    ]
+    revolut_txs = [
+        Transaction(date(2026, 8, 10), Decimal("-1.10"), "EUR", "Compra"),
+        Transaction(date(2026, 8, 5), Decimal("-8.00"), "EUR", "Cafe"),
+    ]
+
+    rows = transaction_rows_for_banks([("ING España", ing_txs), ("Revolut", revolut_txs)])
+
+    assert rows == [
+        ["2026-08-01", "ING España", "Nomina", 900.0, "EUR"],
+        ["2026-08-05", "Revolut", "Cafe", -8.0, "EUR"],
+        ["2026-08-10", "ING España", "Compra", -12.3, "EUR"],
+        ["2026-08-10", "ING España", "Compra", -4.0, "EUR"],
+        ["2026-08-10", "Revolut", "Compra", -1.1, "EUR"],
+    ]
+
+
+def test_rows_use_the_five_columns_of_the_raw_tab() -> None:
+    """Every row follows `_HEADERS`: date, bank, description, amount, currency."""
+    tx = Transaction(date(2026, 8, 2), Decimal("-3.50"), "EUR", "Compra")
+
+    assert transaction_rows_for_banks([("Revolut", [tx])]) == [
+        ["2026-08-02", "Revolut", "Compra", -3.5, "EUR"]
+    ]
+
+
+def test_run_sync_writes_the_raw_tab_oldest_first_across_banks() -> None:
+    """The sync call path flattens banks in one ascending order, not bank by bank."""
+    ing_txs = [
+        Transaction(date(2026, 8, 9), Decimal("-4.00"), "EUR", "ING tarde"),
+        Transaction(date(2026, 8, 2), Decimal("900.00"), "EUR", "ING pronto"),
+    ]
+    revolut_txs = [
+        Transaction(date(2026, 8, 5), Decimal("-1.10"), "EUR", "Revolut medio"),
+    ]
+    connectors = _four_connectors(ing_txs=ing_txs, revolut_txs=revolut_txs)
+    writer = Mock(spec=SheetsWriter)
+
+    run_sync(connectors=connectors, writer=writer, document_id="doc-id", today=date(2026, 8, 15))
+
+    written_rows = writer.write.call_args.kwargs["rows"]
+    assert [(row[0], row[1], row[2]) for row in written_rows] == [
+        ("2026-08-02", "ING España", "ING pronto"),
+        ("2026-08-05", "Revolut", "Revolut medio"),
+        ("2026-08-09", "ING España", "ING tarde"),
+    ]

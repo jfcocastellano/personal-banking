@@ -75,8 +75,9 @@ resumen se recalcula solo.
 
 Hoy solo ING, Revolut y MyInvestor aportan movimientos: el conector de Sabadell existe pero su
 sesión PSD2 no se pudo obtener (`docs/credentials-setup.md` § 3.5). Cuando esa credencial exista,
-Sabadell aparecerá como una fila más; las categorías del bloque central se seguirán asignando a
-mano, porque ninguna API las informa.
+Sabadell aparecerá como una fila más; las categorías del bloque central se siguen asignando a
+mano: la API documenta `merchant_category_code` (ISO 18245) como campo opcional, pero falta medir
+si cada banco lo informa (`docs/context.md`, «Campos de transacción disponibles»).
 
 **N26 no aparece**: está en la hoja original pero el proyecto no tiene conector de N26. Agregarlo
 es replicar el patrón de los otros cuatro (una clave `ENABLE_BANKING_SESSION_ID_N26` y una clase).

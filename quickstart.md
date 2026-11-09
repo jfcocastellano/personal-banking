@@ -446,7 +446,9 @@ GitHub Actions: `Actions → Layout mensual → Run workflow`.
 - Los totales son fórmulas (dos `SUMIF` sobre la columna de importes; el neto suma ambas
   celdas), así que un importe corregido a mano se refleja solo.
 - El bloque de gastos comunes trae el catálogo de categorías con los importes vacíos y se llena a
-  mano: ninguna API informa esa categorización. Los movimientos de Sabadell llegarán a la columna
+  mano: la API documenta `merchant_category_code` (ISO 18245) como campo opcional, pero falta
+  medir si cada banco lo informa, así que por ahora no hay etiqueta automática que usar
+  (`docs/context.md`, «Campos de transacción disponibles»). Los movimientos de Sabadell llegarán a la columna
   de gastos individuales cuando exista esa sesión PSD2; hoy el bloque central arranca vacío.
 - El saldo de cada cuenta es el que informa el banco **en el momento de la
   consulta**. PSD2 no expone saldos históricos, así que el cierre real de mes
