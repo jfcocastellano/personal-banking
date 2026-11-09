@@ -87,8 +87,11 @@ paths. `headline` is the exact line the command printed on stdout (the summary l
       note that `daily` takes no arguments, `docs/context.md` and `specs/016-.../tasks.md`.
       `6ad41b2`: also the stale invariant #7 of the same contract (the job still said
       `python -m banking sync`) and the roadmap wording.
-- [ ] T5 — Gates (`pytest`, `ruff check`, `ruff format --check`, `mypy src/`, workflow YAML parses)
-      and a ready PR.
+- [x] T5 — Gates (`pytest`, `ruff check`, `ruff format --check`, `mypy src/`, workflow YAML parses)
+      and a ready PR. `a1b978c` pushed as PR #31: `349 passed`, ruff clean, 54 files formatted,
+      mypy 25 files, `sync.yml` parses, CI green; native review `review-647e65c9f7587a3d`
+      (high, 4 lenses, 12 files / 897 lines) approved with zero findings and the
+      acknowledgement burned.
 
 ## Out of scope
 
