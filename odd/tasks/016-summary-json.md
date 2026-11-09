@@ -69,17 +69,24 @@ paths. `headline` is the exact line the command printed on stdout (the summary l
 
 ## Tasks
 
-- [ ] T1 — `--summary-json PATH` writes the payload on the success and nothing-to-sync paths,
+- [x] T1 — `--summary-json PATH` writes the payload on the success and nothing-to-sync paths,
       atomically, leaving stdout byte-identical when compared with a run without the flag (test
-      first: the test asserting the file exists is RED before the flag).
-- [ ] T2 — The payload is also written on the total-failure and Sheets-failure paths, carrying the
+      first: the test asserting the file exists is RED before the flag). `f907a89`: RED was
+      `SystemExit: 2 — unrecognized arguments: --summary-json`; `src/banking/summary_file.py` is new.
+- [x] T2 — The payload is also written on the total-failure and Sheets-failure paths, carrying the
       FINAL exit code (including `4` when the notification delivery failed), and a write failure
-      degrades to a stderr warning without touching the exit code.
-- [ ] T3 — `sync.yml` reads the JSON instead of grepping `Daily pass skipped stage:` /
+      degrades to a stderr warning without touching the exit code. `f907a89`: four terminal paths,
+      one write each; the layout-stage `raw_tab` defect and the `4` on a partial run were found by
+      verification and fixed before the commit.
+- [x] T3 — `sync.yml` reads the JSON instead of grepping `Daily pass skipped stage:` /
       `Daily pass stage failed:`, degrading gracefully when the file is absent (process died before
-      writing it).
-- [ ] T4 — Update `specs/007-scheduler-github-actions/contracts/sync-workflow.md` §5.2, the 016 spec
+      writing it). `655544e`: the step-4 script was extracted from the YAML and exercised locally
+      with a missing file, a malformed document and a valid one; all three published the summary
+      with exit 0.
+- [x] T4 — Update `specs/007-scheduler-github-actions/contracts/sync-workflow.md` §5.2, the 016 spec
       note that `daily` takes no arguments, `docs/context.md` and `specs/016-.../tasks.md`.
+      `6ad41b2`: also the stale invariant #7 of the same contract (the job still said
+      `python -m banking sync`) and the roadmap wording.
 - [ ] T5 — Gates (`pytest`, `ruff check`, `ruff format --check`, `mypy src/`, workflow YAML parses)
       and a ready PR.
 
