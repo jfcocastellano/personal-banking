@@ -4,11 +4,14 @@
 test that reached a bank API, a real spreadsheet or SMTP would be a bug here.
 """
 
+import argparse
+import json
 import smtplib
 import subprocess
 import sys
 from datetime import date
 from decimal import Decimal
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -174,6 +177,12 @@ def _explode_on_notifier_build(monkeypatch: pytest.MonkeyPatch) -> None:
         raise AssertionError("EmailNotifier must not be built")
 
     monkeypatch.setattr(cli_daily, "EmailNotifier", _build)
+
+
+def _daily_args(path: Path | None = None) -> argparse.Namespace:
+    """Parse real ``daily`` argv, optionally with the ``--summary-json`` flag."""
+    argv = ["daily"] if path is None else ["daily", "--summary-json", str(path)]
+    return _build_parser().parse_args(argv)
 
 
 # --- registration and parser ------------------------------------------------
@@ -522,3 +531,214 @@ def test_email_names_a_balance_failure_of_a_succeeded_bank(
     assert (
         "  - ING España: 1 movimientos — saldo no disponible: quota exceeded" in body.splitlines()
     )
+
+
+# --- --summary-json: the JSON run summary -----------------------------------
+
+
+def test_summary_json_flag_writes_the_document_and_leaves_stdout_identical(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The flag is presentation only: same stdout, plus one JSON document."""
+    monkeypatch.setattr(cli_daily, "run_daily", lambda: _full_success_summary())
+    _explode_on_notifier_build(monkeypatch)
+    path = tmp_path / "summary.json"
+
+    assert cli_daily.handle(_daily_args()) == 0
+    without_flag = capsys.readouterr()
+    assert not path.exists(), "A run without the flag must write no file"
+
+    assert cli_daily.handle(_daily_args(path)) == 0
+    with_flag = capsys.readouterr()
+
+    assert with_flag.out == without_flag.out
+    assert with_flag.err == without_flag.err == ""
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    assert payload["schema"] == "banking.summary/v1"
+    assert payload["status"] == "full_success"
+    assert payload["exit_code"] == 0
+    assert payload["raw_tab"] == "2026-11"
+    assert payload["layout_tab"] == "2026-11 Gastos"
+    assert payload["sheets_error"] is None
+
+
+def test_summary_json_payload_matches_the_printed_headline_and_the_counters(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The document repeats what the process printed, not a re-derived prose."""
+    summary = _full_success_summary()
+    monkeypatch.setattr(cli_daily, "run_daily", lambda: summary)
+    _explode_on_notifier_build(monkeypatch)
+    path = tmp_path / "summary.json"
+
+    assert cli_daily.handle(_daily_args(path)) == 0
+    out = capsys.readouterr().out
+
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    assert payload["headline"] == out.splitlines()[0]
+    assert payload["date"] == date.today().isoformat()
+    assert payload["duration_seconds"] == summary.duration_seconds
+    assert payload["banks_total"] == len(summary.passes) == 2
+    assert payload["banks_succeeded"] == 2
+    assert payload["banks_not_onboarded"] == 0
+    assert payload["banks_failed"] == 0
+    assert payload["balance_failures"] == 0
+    assert payload["rows_written"] == summary.total_rows_written
+    assert payload["expense_count"] == summary.expense_count
+    assert payload["balance_count"] == summary.balance_count
+    assert payload["not_onboarded_banks"] == []
+    first, second = payload["banks"]
+    assert first["bank"] == _BANK_A
+    assert first["transactions"] == 2
+    assert first["balance_reported"] is True
+    assert first["not_onboarded"] is False
+    assert second["bank"] == _BANK_B
+    assert second["transactions"] == 1
+
+
+def test_summary_json_records_the_nothing_to_sync_status(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A run in which no bank is onboarded still writes the document."""
+    monkeypatch.setattr(cli_daily, "run_daily", lambda: _not_onboarded_summary())
+    _explode_on_notifier_build(monkeypatch)
+    path = tmp_path / "summary.json"
+
+    assert cli_daily.handle(_daily_args(path)) == 0
+
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    assert payload["status"] == "nothing_to_sync"
+    assert payload["exit_code"] == 0
+    assert payload["banks_not_onboarded"] == 2
+    assert payload["not_onboarded_banks"] == [_BANK_A, _BANK_B]
+    assert payload["rows_written"] == 0
+    assert payload["headline"].startswith("Pasada diaria omitida")
+
+
+@pytest.mark.parametrize(
+    ("exc", "status", "delivery", "expected_exit"),
+    [
+        pytest.param(
+            _total_failure_exception(), "total_failure", DeliveryStatus.SENT, 1, id="total"
+        ),
+        pytest.param(
+            DailySheetsError("no access", stage="raw", tab_name="2026-11"),
+            "sheets_failure",
+            DeliveryStatus.SENT,
+            2,
+            id="sheets",
+        ),
+        pytest.param(
+            _total_failure_exception(), "total_failure", DeliveryStatus.FAILED, 4, id="undelivered"
+        ),
+    ],
+)
+def test_summary_json_is_written_on_the_failure_paths_with_the_final_exit_code(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    mocker: MockerFixture,
+    exc: BaseException,
+    status: str,
+    delivery: DeliveryStatus,
+    expected_exit: int,
+) -> None:
+    """Every terminal path writes the document, carrying the code the run exits with."""
+    monkeypatch.setattr(cli_daily, "run_daily", _raise(exc))
+    notifier = _mock_notifier(mocker, delivery)
+    _install_notifier(monkeypatch, notifier)
+    path = tmp_path / "summary.json"
+
+    exit_code = cli_daily.handle(_daily_args(path))
+
+    assert exit_code == expected_exit
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    assert payload["status"] == status
+    assert payload["exit_code"] == exit_code
+    # The headline is the exact ERROR: line, so the workflow copies prose the
+    # process authored even on the paths where it prints no summary line.
+    assert payload["headline"] in capsys.readouterr().err
+    assert payload["headline"].startswith("ERROR")
+
+
+@pytest.mark.parametrize(
+    ("stage", "tab_name", "raw_tab", "layout_tab"),
+    [
+        pytest.param("raw", "2026-11", "2026-11", "2026-11 Gastos", id="raw"),
+        pytest.param("layout", "2026-11 Gastos", "2026-11", "2026-11 Gastos", id="layout"),
+    ],
+)
+def test_summary_json_names_the_right_tab_for_the_failed_sheets_stage(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    mocker: MockerFixture,
+    stage: str,
+    tab_name: str,
+    raw_tab: str,
+    layout_tab: str,
+) -> None:
+    """Only the failed stage names its tab; the other keeps the month's own name."""
+    exc = DailySheetsError(
+        "no access",
+        stage=stage,
+        passes=[_pass(_BANK_A, transactions=(_transaction(),), balance=_balance())],
+        tab_name=tab_name,
+    )
+    monkeypatch.setattr(cli_daily, "run_daily", _raise(exc))
+    _install_notifier(monkeypatch, _mock_notifier(mocker))
+    path = tmp_path / "summary.json"
+
+    assert cli_daily.handle(_daily_args(path)) == 2
+
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    assert payload["status"] == "sheets_failure"
+    assert payload["raw_tab"] == raw_tab
+    assert payload["layout_tab"] == layout_tab
+
+
+def test_summary_json_records_exit_four_when_the_notification_fails_on_a_partial_run(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    mocker: MockerFixture,
+) -> None:
+    """A notification that blows up still writes the document with exit code 4."""
+    monkeypatch.setattr(cli_daily, "run_daily", lambda: _partial_failure_summary())
+    store = mocker.Mock()
+    store.get.side_effect = RuntimeError("secret store unavailable")
+    notifier = EmailNotifier(store=store, smtp_factory=mocker.Mock())
+    _install_notifier(monkeypatch, notifier)
+    path = tmp_path / "summary.json"
+
+    exit_code = cli_daily.handle(_daily_args(path))
+
+    assert exit_code == 4
+    assert _NOTIFICATION_FAILED in capsys.readouterr().err
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    assert payload["status"] == "partial_failure"
+    assert payload["exit_code"] == 4
+
+
+def test_summary_json_write_failure_warns_once_and_keeps_the_exit_code(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """An unwritable path degrades to one stderr warning, never to a new exit code."""
+    monkeypatch.setattr(cli_daily, "run_daily", lambda: _full_success_summary())
+    _explode_on_notifier_build(monkeypatch)
+    path = tmp_path / "missing-directory" / "summary.json"
+
+    assert cli_daily.handle(_daily_args(path)) == 0
+
+    captured = capsys.readouterr()
+    assert "Pasada diaria completada" in captured.out
+    warnings = [line for line in captured.err.splitlines() if line.strip()]
+    assert len(warnings) == 1, f"Expected one warning line, got {warnings}"
+    assert "AVISO" in warnings[0]
+    assert not path.exists()

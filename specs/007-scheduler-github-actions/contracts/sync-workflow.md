@@ -61,8 +61,8 @@ nueva espera a que termine la anterior (o es descartada por la plataforma si ya 
 | 3 | `Preparar Python` | `actions/setup-python@v5`, `python-version: "3.12"` | Decisión 11 |
 | 4 | `Instalar dependencias` | `pip install -r requirements.txt` + `pip install -e .` + `pip-audit -r requirements.txt` | Decisión 11 |
 | 5 | `Provisionar configuración` | Escribe el `.env` cifrado con `python -m banking secrets set` (familia A) y `eb-config.json` + PEM en `$RUNNER_TEMP/eb` (familia B) | FR-004, Decisión 3 |
-| 6 | `Ejecutar sincronización` | `python -m banking sync` con `tee` a log, captura `PIPESTATUS[0]` en `steps.sync.outputs.exit_code` | FR-003, FR-007 |
-| 7 | `Publicar resumen` | `if: always()`; escribe el resumen en `$GITHUB_STEP_SUMMARY` | FR-006 |
+| 6 | `Ejecutar sincronización` | `python -m banking daily --summary-json "$RUNNER_TEMP/banking-summary.json"` con `tee` a log, captura `PIPESTATUS[0]` en `steps.sync.outputs.exit_code` | FR-003, FR-007 |
+| 7 | `Publicar resumen` | `if: always()`; lee el documento JSON del paso 6 y escribe el resumen en `$GITHUB_STEP_SUMMARY` | FR-006 |
 | 8 | `Propagar resultado` | `exit ${{ steps.sync.outputs.exit_code }}` | FR-007 |
 
 **Orden obligatorio**: 1 antes de 6 (no se toca ninguna API si falta configuración); 7 con
@@ -117,14 +117,35 @@ se enmascara como éxito.
 
 ### 5.2 Contenido del resumen
 
+El resumen se construye a partir del documento JSON que el propio proceso escribe con
+`--summary-json "$RUNNER_TEMP/banking-summary.json"` (esquema `banking.summary/v1`, código en
+`src/banking/summary_file.py`). El workflow **lee campos, no prosa de log**: ninguna línea de log es
+fuente de datos, y el extracto de log del final es sólo ilustrativo.
+
+| Clave | Contenido |
+|---|---|
+| `schema` | `banking.summary/v1` |
+| `date`, `raw_tab`, `layout_tab` | Fecha de ejecución y las dos pestañas del mes |
+| `status` | `full_success`, `partial_failure`, `nothing_to_sync` (corrida completa), `total_failure` o `sheets_failure` (caminos de fallo) |
+| `exit_code` | Exit code **final** del proceso, incluido `4` cuando no se pudo entregar el email |
+| `headline` | La línea exacta que el proceso imprimió: el resumen de la pasada o la línea `ERROR: …` |
+| `banks_total`, `banks_succeeded`, `banks_not_onboarded`, `banks_failed`, `balance_failures` | Conteos por banco (sin sesión PSD2 y saldos fallidos van aparte) |
+| `rows_written`, `expense_count`, `balance_count`, `duration_seconds` | Lo escrito en cada pestaña y la duración |
+| `sheets_error`, `not_onboarded_banks`, `banks[]` | Error de Sheets con su etapa, nombres sin sesión y detalle por banco (`transactions`, `balance_reported`, fallo de cada etapa) |
+
 El resumen publicado DEBE contener, en cualquier estado:
 
-1. **Estado** legible (éxito / fallo) y **exit code** del proceso.
-2. **Bancos procesados**: cabecera `Sincronización completada|parcial: N/M bancos` + una línea por
-   banco con su recuento (`  - <banco>: <n> movimientos`) o su motivo (`  - <banco>: FALLÓ — <motivo>`).
-3. **Movimientos escritos**: total y pestaña destino, en la cabecera del proceso.
-4. **Duración**: la del proceso (`(Xs)` en la cabecera) y, opcionalmente, la del job.
-5. Si no hay salida del proceso: nota explícita de fallo de arranque y remisión a los logs.
+1. **Estado** legible (éxito / fallo) según el exit code del proceso y el **exit code**.
+2. **Bancos procesados**: la `headline` del documento (bancos N/M, movimientos por pestaña y duración)
+   y, cuando el proceso llegó a imprimirla, la línea por banco del extracto de log.
+3. **Movimientos escritos**: total y pestaña destino, dentro de `headline`.
+4. **Duración**: la del proceso, dentro de `headline` (`(Xs)`).
+5. **Bancos sin sesión PSD2**, **bancos con fallo** y **saldos con fallo**: `banks_not_onboarded`,
+   `banks_failed` y `balance_failures`.
+6. **Degradación**: si el documento no existe o no es JSON válido (el proceso murió antes de
+   escribirlo), los conteos valen `0` y `headline` cae a la frase de reserva
+   «(el proceso no llegó a imprimir el resumen de la pasada)», sin error de shell bajo `set -u`; si
+   además no hay salida del proceso, nota explícita de fallo de arranque y remisión a los logs.
 
 **No contiene**: credenciales, tokens, JWT, `session_id` completos ni el JSON de la cuenta de servicio
 (FR-010; la salida del proceso ya está sanitizada por IT5/IT6).
@@ -141,7 +162,7 @@ El resumen publicado DEBE contener, en cualquier estado:
 | 4 | `timeout-minutes: 10` y `runs-on: ubuntu-latest` | FR-005 |
 | 5 | `concurrency` con `cancel-in-progress: false` | FR-008 |
 | 6 | `permissions` de sólo lectura | FR-010 |
-| 7 | El job ejecuta `python -m banking sync` (mismo comando que en local) | FR-003 |
+| 7 | El job ejecuta `python -m banking daily` (mismo comando que en local, más `--summary-json` para el resumen) | FR-003 |
 | 8 | Todos los `${{ secrets.* }}` están bajo `env:` | FR-010 |
 | 9 | Los 14 nombres de secreto están declarados | FR-004 |
 | 10 | Paso de resumen con `if: always()` y `$GITHUB_STEP_SUMMARY` | FR-006 |
