@@ -6,6 +6,7 @@ import logging
 import time
 from dataclasses import dataclass
 from datetime import date
+from decimal import Decimal
 from enum import Enum
 from typing import Sequence
 
@@ -127,12 +128,45 @@ class SyncSummary:
     duration_seconds: float
 
 
-def transaction_rows(bank_name: str, transactions: list[Transaction]) -> list[list[CellValue]]:
-    """Convert transactions to rows matching `_HEADERS`, in fixed column order."""
+def _transaction_row(bank_name: str, transaction: Transaction) -> list[CellValue]:
+    """The raw tab's five columns, in `_HEADERS` order: the one place they live."""
     return [
-        [tx.booking_date.isoformat(), bank_name, tx.description, float(tx.amount), tx.currency]
-        for tx in transactions
+        transaction.booking_date.isoformat(),
+        bank_name,
+        transaction.description,
+        float(transaction.amount),
+        transaction.currency,
     ]
+
+
+def _raw_row_key(bank_and_transaction: tuple[str, Transaction]) -> tuple[date, str, str, Decimal]:
+    """Sort key of the raw tab: the expenses tab's key, plus the amount."""
+    bank_name, transaction = bank_and_transaction
+    return (transaction.booking_date, bank_name, transaction.description, transaction.amount)
+
+
+def transaction_rows_for_banks(
+    banks: Sequence[tuple[str, Sequence[Transaction]]],
+) -> list[list[CellValue]]:
+    """Rows for several banks in one order: date, bank, description, then amount.
+
+    Both tabs read oldest first, so the rows are composed here in a single
+    ascending order rather than bank block after bank block. The amount is the
+    final tiebreaker, which keeps equal dates, banks and descriptions stable.
+
+    Args:
+        banks: One ``(bank_name, transactions)`` pair per bank.
+
+    Returns:
+        The rows of every bank, interleaved in that single ascending order.
+    """
+    pairs = [
+        (bank_name, transaction)
+        for bank_name, transactions in banks
+        for transaction in transactions
+    ]
+    ordered = sorted(pairs, key=_raw_row_key)
+    return [_transaction_row(bank_name, transaction) for bank_name, transaction in ordered]
 
 
 def _classify(outcomes: list[BankOutcome]) -> OverallStatus:
@@ -234,11 +268,13 @@ def run_sync(
         raise NoConnectorsError("run_sync requires at least one bank connector.")
 
     outcomes: list[BankOutcome] = []
-    rows: list[list[CellValue]] = []
+    bank_transactions: list[tuple[str, Sequence[Transaction]]] = []
     for connector in resolved_connectors:
         outcome, transactions = _sync_one_bank(connector, range_start, execution_date)
         outcomes.append(outcome)
-        rows.extend(transaction_rows(outcome.bank_name, transactions))
+        bank_transactions.append((outcome.bank_name, transactions))
+
+    rows = transaction_rows_for_banks(bank_transactions)
 
     overall_status = _classify(outcomes)
 

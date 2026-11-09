@@ -37,7 +37,7 @@ from banking.sync import (
     _SHEET_ID_KEY,
     NoConnectorsError,
     OverallStatus,
-    transaction_rows,
+    transaction_rows_for_banks,
 )
 
 logger = logging.getLogger(__name__)
@@ -337,9 +337,7 @@ def run_daily(
             duration_seconds=duration,
         )
 
-    raw_rows = [
-        row for run in passes for row in transaction_rows(run.bank_name, list(run.transactions))
-    ]
+    raw_rows = transaction_rows_for_banks([(run.bank_name, run.transactions) for run in passes])
     expense_rows = expense_rows_from_banks(passes)
     balances = balances_from_banks(passes)
 
