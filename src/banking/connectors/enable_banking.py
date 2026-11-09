@@ -400,6 +400,39 @@ class EnableBankingConnector:
     ) -> None:
         self._http_client = http_client if http_client is not None else httpx.Client()
         self._config_dir = config_dir
+        # Session resolution cache. A daily pass calls ``fetch_transactions`` and
+        # then ``fetch_balance`` on the same instance, and resolving the account
+        # costs a ``GET /sessions/{id}`` against the PSD2 daily budget, so the
+        # three inputs are resolved once and reused. A failed resolution leaves
+        # the slot empty, so the next call retries from scratch.
+        self._credential: _SigningCredential | None = None
+        self._session_id: str | None = None
+        self._account_id: str | None = None
+
+    def _resolve_session(self, start_date: date, end_date: date) -> tuple[_SigningCredential, str]:
+        """Return the signing credential and the linked account, resolved once per instance.
+
+        Reusing the resolved values across the two stages of one run is what keeps
+        a daily pass inside the PSD2 request budget. Only a successful resolution
+        is cached: every exception leaves the slot untouched so the next call
+        retries.
+
+        Args:
+            start_date: First date of the range; used only for error logging.
+            end_date: Last date of the range; used only for error logging.
+
+        Returns:
+            The signing credential and the id of the session's linked account.
+        """
+        if self._credential is None:
+            self._credential = _load_signing_credential(self._config_dir)
+        if self._session_id is None:
+            self._session_id = SecretStore().get(self._SESSION_ID_KEY)
+        if self._account_id is None:
+            self._account_id = self._resolve_account_id(
+                self._credential, self._session_id, start_date, end_date
+            )
+        return self._credential, self._account_id
 
     def _resolve_account_id(
         self, credential: _SigningCredential, session_id: str, start_date: date, end_date: date
@@ -443,12 +476,10 @@ class EnableBankingConnector:
         month-end historical balance. ``None`` means the provider reported no
         usable balance for this account.
         """
-        credential = _load_signing_credential(self._config_dir)
-        session_id = SecretStore().get(self._SESSION_ID_KEY)
         # Balances are not date-ranged; the account lookup reuses the existing
         # machinery, which only needs a date pair for its error logging.
         today = date.today()
-        account_id = self._resolve_account_id(credential, session_id, today, today)
+        credential, account_id = self._resolve_session(today, today)
 
         token = _build_jwt(credential)
         response = self._http_client.get(
@@ -509,9 +540,7 @@ class EnableBankingConnector:
                 f"end_date ({end_date.isoformat()})."
             )
 
-        credential = _load_signing_credential(self._config_dir)
-        session_id = SecretStore().get(self._SESSION_ID_KEY)
-        account_id = self._resolve_account_id(credential, session_id, start_date, end_date)
+        credential, account_id = self._resolve_session(start_date, end_date)
 
         results: dict[tuple[date, Decimal, str], Transaction] = {}
         continuation_key: str | None = None
