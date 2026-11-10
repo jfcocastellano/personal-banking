@@ -97,6 +97,7 @@ class Transaction:
     amount: Decimal
     currency: str
     description: str
+    merchant_category_code: str | None = None
 
 
 @dataclass(frozen=True)
@@ -234,8 +235,28 @@ def _parse_transaction(raw: dict[str, Any]) -> Transaction | None:
         return None
 
     return Transaction(
-        booking_date=booking_date, amount=magnitude, currency=currency, description=description
+        booking_date=booking_date,
+        amount=magnitude,
+        currency=currency,
+        description=description,
+        merchant_category_code=_optional_text(raw, "merchant_category_code"),
     )
+
+
+def _optional_text(raw: dict[str, Any], key: str) -> str | None:
+    """An optional string record member: present non-blank text, else None.
+
+    Optional provider data must never abort the whole record: any non-string
+    value a provider sends anyway is logged at debug and treated as missing.
+    """
+    value = raw.get(key)
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        logger.debug("Ignoring non-string optional field %s: %r", key, value)
+        return None
+    normalized = value.strip()
+    return normalized if normalized else None
 
 
 def _parse_balance(raw: dict[str, Any]) -> Balance | None:
