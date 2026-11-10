@@ -155,20 +155,27 @@ python -m banking sync; echo "exit=$?"
 ```
 
 Es exactamente el comando que ejecuta el workflow (FR-003), así que reproduce cualquier fallo de
-sincronización. Ojo con la cuota PSD2 (4 peticiones por cuenta y día): no lo repitas en bucle el mismo
-día. El scheduler **no** se puede probar en local: su validación son los tests de § 2 y una ejecución
+sincronización. Ojo con la cuota PSD2 (4 peticiones por cuenta y día) y con que cada pasada gasta 3
+GET: no lo repitas en bucle el mismo día. El scheduler **no** se puede probar en local: su validación son los tests de § 2 y una ejecución
 manual en GitHub (§ 3).
 
 ---
 
 ## 8. Riesgos operativos conocidos
 
-- **Retraso del cron**: hasta ~15 minutos en horas de alta carga; aceptado y sin impacto en los datos.
+- **Retraso del cron**: el `schedule` de GitHub no es puntual en este repositorio. Medido entre 2026-11-01
+y 2026-11-10: entre **6 y 9 horas** de atraso sobre un cron de las 06:00 UTC (las corridas aterrizaron
+entre las 12:10 y las 14:57). Aceptado: el dato del día llega igual y no se pierde nada. La consecuencia
+operativa es que una corrida ausente a primera hora **no** es una falla: hay que esperar a la tarde
+antes de diagnosticar, y confirmar con `gh run list --workflow sync.yml -L 5`.
 - **Desactivación por inactividad**: GitHub desactiva los workflows programados tras periodos largos
   sin actividad en el repositorio. Comprobación periódica: `gh run list --workflow=sync.yml --limit 5`;
   reactivar con un push o desde la UI de Actions.
 - **Timeout de 10 minutos**: si se alcanza, no hay email (el proceso muere antes de IT6); el estado
   fallido de la ejecución y el resumen degradado son la señal.
-- **Cuota PSD2**: 4 peticiones por cuenta y día. La ejecución diaria consume 1; las ejecuciones
-  manuales de recuperación también cuentan — no encadenar más de 3 recuperaciones en el mismo día.
+- **Cuota PSD2**: 4 peticiones por cuenta y día. La ejecución diaria consume **3** (consulta de sesión,
+  movimientos y saldo), así que una sola recuperación manual en el mismo día ya dobla la cuota
+  declarada: no encadenar recuperaciones. El 2026-11-09 dos pasadas completas en el mismo día UTC
+  terminaron las dos en `success`, así que el límite declarado no se comporta como un corte duro; eso
+  no lo vuelve seguro, porque el techo real no está medido.
 - **Ejecuciones solapadas**: la segunda espera a la primera (`concurrency`); nunca escriben a la vez.

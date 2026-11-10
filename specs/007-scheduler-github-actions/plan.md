@@ -70,8 +70,9 @@ o en local.
 
 **Objetivos de rendimiento**: job completo por debajo de 10 minutos (FR-005, SC-006); sincronización
 real < 2 minutos (SLO de IT5); fallo por configuración ausente en menos de 1 minuto (FR-009, SC-007).
-Concurrencia: una ejecución activa como máximo; el cron diario consume 1 de las 4 peticiones PSD2 por
-cuenta y día.
+Concurrencia: una ejecución activa como máximo; el cron diario consume **3** de las 4 peticiones PSD2 por
+cuenta y día (consulta de sesión, movimientos y saldo), así que por esa contabilidad no queda margen
+para una segunda pasada en el mismo día.
 
 **Restricciones**:
 - Sin lógica de CI en el código Python (FR-003): el workflow ejecuta el mismo comando que en local y

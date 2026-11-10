@@ -117,9 +117,10 @@ tanto en una ejecución exitosa como en una fallida.
   mensaje que nombre la configuración ausente (sin revelar valores) y sin llegar a contactar con las APIs
   bancarias: el límite regulatorio PSD2 permite 4 peticiones de información de cuenta por día y cuenta, así
   que una ejecución mal configurada no debe consumir cuota.
-- ¿Qué ocurre si el disparador programado se retrasa? → Se acepta un retardo de hasta ~15 minutos
-  (`docs/context.md`, Constraints Duros); el proceso no asume una hora exacta ni depende de ella para calcular
-  el rango de fechas (siempre sincroniza el mes en curso desde el día 1).
+- ¿Qué ocurre si el disparador programado se retrasa? → Se acepta el retraso que GitHub imponga: medido
+  entre 6 y 9 horas en este repositorio (`docs/context.md`, Constraints Duros). El proceso no asume una
+  hora exacta ni depende de ella para calcular el rango de fechas (siempre sincroniza el mes en curso
+  desde el día 1), así que el retraso no pierde datos: solo los entrega más tarde.
 - ¿Qué ocurre si dos ejecuciones se solapan (programada + manual)? → El sistema NO DEBE permitir que dos
   ejecuciones escriban en la hoja de cálculo simultáneamente: la segunda espera o se cancela, de modo que la
   pestaña nunca queda a medio escribir por dos procesos a la vez.
@@ -234,7 +235,7 @@ tanto en una ejecución exitosa como en una fallida.
 - El resumen publicado es texto plano derivado del resultado estructurado de la sincronización; no se generan
   artefactos adjuntos ni informes históricos.
 - Los workflows programados de GitHub pueden desactivarse tras periodos prolongados sin actividad en el
-  repositorio y pueden retrasarse ~15 minutos en horas de alta carga; ambos comportamientos se aceptan y se
+  repositorio y no son puntuales: se midió un retraso de 6 a 9 horas; ambos comportamientos se aceptan y se
   documentan como riesgos operativos.
 - El sistema se considera cerrado con una única ejecución real exitosa documentada (roadmap, Iteración 7); no
   se exige un periodo de observación de producción más largo para dar la iteración por terminada.
