@@ -27,7 +27,14 @@ from banking.sheets.writer import CellValue, SheetsWriter
 logger = logging.getLogger(__name__)
 
 _SHEET_ID_KEY = "GOOGLE_SHEET_ID"
-_HEADERS: list[CellValue] = ["Fecha de liquidación", "Banco", "Descripción", "Importe", "Divisa", "Categoría"]
+_HEADERS: list[CellValue] = [
+    "Fecha de liquidación",
+    "Banco",
+    "Descripción",
+    "Importe",
+    "Divisa",
+    "Categoría",
+]
 _CONNECTOR_CLASSES: tuple[type[EnableBankingConnector], ...] = (
     IngConnector,
     RevolutConnector,
