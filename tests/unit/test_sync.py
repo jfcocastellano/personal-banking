@@ -40,7 +40,7 @@ from banking.sync import (
     transaction_rows_for_banks,
 )
 
-_HEADERS = ["Fecha de liquidación", "Banco", "Descripción", "Importe", "Divisa"]
+_HEADERS = ["Fecha de liquidación", "Banco", "Descripción", "Importe", "Divisa", "Categoría"]
 
 
 def _mock_connector(spec: type, transactions: list[Transaction]) -> Mock:
@@ -87,10 +87,10 @@ def test_run_sync_all_four_succeed_combines_and_writes() -> None:
         tab_name="2026-08",
         headers=_HEADERS,
         rows=[
-            ["2026-08-01", "ING España", "ING tx", 10.0, "EUR"],
-            ["2026-08-02", "Revolut", "Revolut tx", -5.0, "EUR"],
-            ["2026-08-03", "MyInvestor", "MyInvestor tx", 20.0, "EUR"],
-            ["2026-08-04", "Banco Sabadell", "Sabadell tx", -2.5, "EUR"],
+            ["2026-08-01", "ING España", "ING tx", 10.0, "EUR", ""],
+            ["2026-08-02", "Revolut", "Revolut tx", -5.0, "EUR", ""],
+            ["2026-08-03", "MyInvestor", "MyInvestor tx", 20.0, "EUR", ""],
+            ["2026-08-04", "Banco Sabadell", "Sabadell tx", -2.5, "EUR", ""],
         ],
     )
     assert summary.overall_status == OverallStatus.FULL_SUCCESS
@@ -497,8 +497,8 @@ def test_run_sync_not_onboarded_banks_still_count_as_full_success() -> None:
         tab_name="2026-08",
         headers=_HEADERS,
         rows=[
-            ["2026-08-01", "ING España", "ING tx", 10.0, "EUR"],
-            ["2026-08-02", "Revolut", "Revolut tx", -5.0, "EUR"],
+            ["2026-08-01", "ING España", "ING tx", 10.0, "EUR", ""],
+            ["2026-08-02", "Revolut", "Revolut tx", -5.0, "EUR", ""],
         ],
     )
     by_name = {o.bank_name: o for o in summary.outcomes}
@@ -698,20 +698,38 @@ def test_transaction_rows_for_banks_orders_across_banks_ascending() -> None:
     rows = transaction_rows_for_banks([("ING España", ing_txs), ("Revolut", revolut_txs)])
 
     assert rows == [
-        ["2026-08-01", "ING España", "Nomina", 900.0, "EUR"],
-        ["2026-08-05", "Revolut", "Cafe", -8.0, "EUR"],
-        ["2026-08-10", "ING España", "Compra", -12.3, "EUR"],
-        ["2026-08-10", "ING España", "Compra", -4.0, "EUR"],
-        ["2026-08-10", "Revolut", "Compra", -1.1, "EUR"],
+        ["2026-08-01", "ING España", "Nomina", 900.0, "EUR", ""],
+        ["2026-08-05", "Revolut", "Cafe", -8.0, "EUR", ""],
+        ["2026-08-10", "ING España", "Compra", -12.3, "EUR", ""],
+        ["2026-08-10", "ING España", "Compra", -4.0, "EUR", ""],
+        ["2026-08-10", "Revolut", "Compra", -1.1, "EUR", ""],
     ]
 
 
-def test_rows_use_the_five_columns_of_the_raw_tab() -> None:
-    """Every row follows `_HEADERS`: date, bank, description, amount, currency."""
+def test_rows_use_the_six_columns_of_the_raw_tab() -> None:
+    """Every row follows `_HEADERS`: date, bank, description, amount, currency, category."""
     tx = Transaction(date(2026, 8, 2), Decimal("-3.50"), "EUR", "Compra")
 
     assert transaction_rows_for_banks([("Revolut", [tx])]) == [
-        ["2026-08-02", "Revolut", "Compra", -3.5, "EUR"]
+        ["2026-08-02", "Revolut", "Compra", -3.5, "EUR", ""]
+    ]
+
+
+def test_category_cell_shows_the_mapped_spanish_label() -> None:
+    """A known ISO 18245 code is shown as its stable Spanish label."""
+    tx = Transaction(date(2026, 8, 2), Decimal("-3.50"), "EUR", "Compra", "5411")
+
+    assert transaction_rows_for_banks([("Revolut", [tx])]) == [
+        ["2026-08-02", "Revolut", "Compra", -3.5, "EUR", "ALIMENTACIÓN"]
+    ]
+
+
+def test_category_cell_falls_back_to_the_raw_code() -> None:
+    """A code outside the label table is shown as the bank sent it."""
+    tx = Transaction(date(2026, 8, 2), Decimal("-3.50"), "EUR", "Compra", "5917")
+
+    assert transaction_rows_for_banks([("Revolut", [tx])]) == [
+        ["2026-08-02", "Revolut", "Compra", -3.5, "EUR", "5917"]
     ]
 
 

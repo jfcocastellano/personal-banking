@@ -10,6 +10,7 @@ from decimal import Decimal
 from enum import Enum
 from typing import Sequence
 
+from banking.categories import category_cell
 from banking.config.secret_store import SecretStore
 from banking.connectors.enable_banking import (
     BankNotOnboardedError,
@@ -26,7 +27,7 @@ from banking.sheets.writer import CellValue, SheetsWriter
 logger = logging.getLogger(__name__)
 
 _SHEET_ID_KEY = "GOOGLE_SHEET_ID"
-_HEADERS: list[CellValue] = ["Fecha de liquidación", "Banco", "Descripción", "Importe", "Divisa"]
+_HEADERS: list[CellValue] = ["Fecha de liquidación", "Banco", "Descripción", "Importe", "Divisa", "Categoría"]
 _CONNECTOR_CLASSES: tuple[type[EnableBankingConnector], ...] = (
     IngConnector,
     RevolutConnector,
@@ -129,13 +130,14 @@ class SyncSummary:
 
 
 def _transaction_row(bank_name: str, transaction: Transaction) -> list[CellValue]:
-    """The raw tab's five columns, in `_HEADERS` order: the one place they live."""
+    """The raw tab's six columns, in `_HEADERS` order: the one place they live."""
     return [
         transaction.booking_date.isoformat(),
         bank_name,
         transaction.description,
         float(transaction.amount),
         transaction.currency,
+        category_cell(transaction.merchant_category_code),
     ]
 
 
