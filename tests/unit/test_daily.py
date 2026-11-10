@@ -381,6 +381,7 @@ def _expense(description: str, amount: str, bank: str) -> ExpenseRow:
         bank=bank,
         description=description,
         amount=Decimal(amount),
+        category="",
     )
 
 

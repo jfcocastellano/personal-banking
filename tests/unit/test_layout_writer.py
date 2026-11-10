@@ -1,10 +1,11 @@
 """Tests for banking.sheets.layout.LayoutWriter — fake worksheet/client only.
 
 The fake worksheet is a guard as much as a recorder: on an existing tab it
-refuses any write or clear outside the expense block ``B4:E403`` and the
-summary/balances panel ``J4:K19``, and it refuses a second full-sheet write.
-Those are exactly the properties that protect hand-typed shared amounts in
-``G:H`` (spec FR-009) while letting the panel refresh (FR-004).
+refuses any write or clear outside the category block ``B3:E403`` (the legacy
+expense region, cleared so pre-T4 tabs are cleaned) and the summary/balances
+panel ``J4:K19``, and it refuses a second full-sheet write. Those are exactly
+the properties that protect hand-typed shared amounts in ``G:H`` (spec FR-009)
+while letting the panel refresh (FR-004).
 """
 
 import logging
@@ -20,7 +21,7 @@ import pytest
 from banking.sheets.layout import AccountBalance, ExpenseRow, LayoutWriter
 from banking.sheets.writer import SheetsAccessError, SheetsQuotaExceededError
 
-EXPENSE_REGION = "B4:E403"
+EXPENSE_REGION = "B3:E403"  # legacy region: old headers + up to 400 movement rows
 MONEY_FORMAT = {"numberFormat": {"type": "NUMBER", "pattern": '#,##0.00 "€"'}}
 BOLD = {"textFormat": {"bold": True}}
 BALANCE_TITLE_ROW = 8
@@ -31,8 +32,9 @@ SUMMARY_FIRST_ROW = 4
 SUMMARY_LAST_ROW = 19
 SUMMARY_CLEAR = f"J{SUMMARY_FIRST_ROW}:K{SUMMARY_LAST_ROW}"
 SUMMARY_WRITE = f"J{SUMMARY_FIRST_ROW}"
-INCOME_FORMULA = '=SUMIF($E$4:$E$403,">0",$E$4:$E$403)'
-SPEND_FORMULA = '=SUMIF($E$4:$E$403,"<0",$E$4:$E$403)'
+INCOME_FORMULA = "=SUMIF('2026-08'!$E$4:$E$10000,\">0\",'2026-08'!$E$4:$E$10000)"
+SPEND_FORMULA = "=SUM(C4:C53)"
+SUMS_HEADERS = ["CATEGORÍA", "TOTAL GASTOS"]
 
 
 class FakeWorksheet:
@@ -103,21 +105,23 @@ class FakeWorksheet:
             self._store(SUMMARY_FIRST_ROW, 10, rows)
             return
 
-        if not range_name.startswith("B4"):
+        if range_name != "B3":
             raise AssertionError(f"write outside the writable regions: {range_name!r}")
-        if len(rows) > 400 or any(len(row) > 4 for row in rows):
-            raise AssertionError(f"write escapes B4:E403: {range_name!r} {len(rows)} rows")
+        if any(len(row) != 2 for row in rows):
+            raise AssertionError(f"write escapes B3:C53: {range_name!r} {rows}")
+        if len(rows) > 1 + 50:
+            raise AssertionError(f"write escapes B3:C53: {range_name!r} {len(rows)} rows")
         self.region_updates.append(rows)
         self.region_ranges.append(range_name)
         self.region_raw_flags.append(raw)
-        self._store(4, 2, rows)
+        self._store(3, 2, rows)
 
     def batch_clear(self, ranges: Any) -> None:
         names = ranges if isinstance(ranges, list) else [str(ranges)]
         for range_name in names:
             if range_name == EXPENSE_REGION:
                 self.cleared.append(range_name)
-                self._delete(4, 403, 2, 5)
+                self._delete(3, 403, 2, 5)
                 continue
             panel = re.fullmatch(r"J(\d+):K(\d+)", range_name)
             if panel is None:
@@ -179,12 +183,19 @@ def _writer(spreadsheet: FakeSpreadsheet | None) -> tuple[LayoutWriter, FakeClie
     return LayoutWriter(client=cast(gspread.Client, client)), client
 
 
-def _expense(day: int = 1, bank: str = "ING España", description: str = "Compra") -> ExpenseRow:
+def _expense(
+    day: int = 1,
+    bank: str = "ING España",
+    description: str = "Compra",
+    amount: str = "-10.00",
+    category: str = "",
+) -> ExpenseRow:
     return ExpenseRow(
         booking_date=date(2026, 8, day),
         bank=bank,
         description=description,
-        amount=Decimal("-10.00"),
+        amount=Decimal(amount),
+        category=category,
     )
 
 
@@ -218,28 +229,30 @@ def test_creation_writes_every_block_and_applies_formatting() -> None:
     assert client.opened == ["doc-1"]
     title, rows, cols = spreadsheet.added[0]
     assert title == "2026-08 Gastos"
-    assert rows >= 403  # the expense block must fit
+    assert rows >= 53  # the category sums block must fit
     assert cols >= 11  # A..K
 
     sheet = spreadsheet.sheets["2026-08 Gastos"]
     assert len(sheet.full_updates) == 1
-    # The expense block is rewritten RAW right after the full USER_ENTERED grid.
-    assert sheet.region_updates == [[["2026-08-01", "ING España", "Compra", -10.0]]]
+    # The sums block is rewritten RAW right after the full USER_ENTERED grid.
+    assert sheet.region_updates == [
+        [SUMS_HEADERS, ["SIN CATEGORÍA", -10.0]],
+    ]
     assert sheet.cleared == [EXPENSE_REGION]
-    assert sheet.raw_flags == [False, True]  # grid interpreted, expenses verbatim
+    assert sheet.raw_flags == [False, True]  # grid interpreted, sums verbatim
 
     assert sheet.cells[(2, 2)] == "GASTOS"
     assert sheet.cells[(2, 7)] == "GASTOS COMUNES"
     assert sheet.cells[(2, 10)] == "INGRESOS"
-    assert sheet.cells[(3, 2)] == "FECHA"
-    assert sheet.cells[(3, 4)] == "DESCRIPCIÓN"
+    assert sheet.cells[(3, 2)] == "CATEGORÍA"
+    assert sheet.cells[(3, 3)] == "TOTAL GASTOS"
+    assert sheet.cells.get((3, 4)) is None
     assert sheet.cells[(3, 8)] == "TOTAL"
     assert sheet.cells[(3, 11)] == "IMPORTE"
 
-    assert sheet.cells[(4, 2)] == "2026-08-01"
-    assert sheet.cells[(4, 3)] == "ING España"
-    assert sheet.cells[(4, 4)] == "Compra"
-    assert sheet.cells[(4, 5)] == -10.0
+    assert sheet.cells[(4, 2)] == "SIN CATEGORÍA"
+    assert sheet.cells[(4, 3)] == -10.0
+    assert sheet.cells.get((4, 4)) is None
 
     assert sheet.cells[(4, 7)] == "Alimentación"
     assert sheet.cells[(52, 7)] == "*Otros"
@@ -247,7 +260,7 @@ def test_creation_writes_every_block_and_applies_formatting() -> None:
     assert sheet.cells[(53, 8)] == "=SUM(H4:H52)"
 
     assert sheet.cells[(4, 10)] == "Ingresos"
-    assert sheet.cells[(4, 11)] == '=SUMIF($E$4:$E$403,">0",$E$4:$E$403)'
+    assert sheet.cells[(4, 11)] == INCOME_FORMULA
     assert sheet.cells[(6, 11)] == "=K4+K5"
 
     assert sheet.cells[(BALANCE_TITLE_ROW, 10)] == "SALDO CUENTAS"
@@ -269,7 +282,7 @@ def test_creation_applies_bold_titles_headers_and_money_formats() -> None:
     assert sheet.formats == [
         ("B2:K2", BOLD),
         ("B3:K3", BOLD),
-        ("E4:E403", MONEY_FORMAT),
+        ("C4:C53", MONEY_FORMAT),
         ("H4:H53", MONEY_FORMAT),
         (f"K{SUMMARY_FIRST_ROW}:K{SUMMARY_LAST_ROW}", MONEY_FORMAT),
     ]
@@ -345,7 +358,7 @@ def test_update_never_merges_again() -> None:
     assert sheet.cleared == [EXPENSE_REGION, EXPENSE_REGION, SUMMARY_CLEAR]
 
 
-def test_second_run_clears_and_rewrites_the_expense_region_and_the_panel() -> None:
+def test_second_run_clears_and_rewrites_the_category_region_and_the_panel() -> None:
     spreadsheet = FakeSpreadsheet()
     writer, _client = _writer(spreadsheet)
     writer.write("doc-1", "2026-08 Gastos", [_expense(day=1)], [_balance()])
@@ -362,17 +375,18 @@ def test_second_run_clears_and_rewrites_the_expense_region_and_the_panel() -> No
     assert sheet.cleared == [EXPENSE_REGION, EXPENSE_REGION, SUMMARY_CLEAR]
     assert len(sheet.region_updates) == 2
     region_rows = sheet.region_updates[-1]
-    assert region_rows[0] == ["2026-08-02", "ING España", "Compra", -10.0]
-    assert region_rows[1] == ["2026-08-03", "ING España", "Compra", -10.0]
-    assert sheet.cells[(4, 2)] == "2026-08-02"
-    assert sheet.cells[(5, 2)] == "2026-08-03"
+    assert region_rows[0] == SUMS_HEADERS
+    assert region_rows[1] == ["SIN CATEGORÍA", -20.0]  # both movements share one category
+    assert sheet.cells[(3, 2)] == "CATEGORÍA"
+    assert sheet.cells[(3, 3)] == "TOTAL GASTOS"
+    assert sheet.cells[(4, 2)] == "SIN CATEGORÍA"
+    assert sheet.cells[(4, 3)] == -20.0
 
     # The panel is refreshed on the update path too, with at least one update.
     assert sheet.panel_ranges == [SUMMARY_WRITE]
 
-    # Everything outside B4:E403 and J:K keeps its value.
+    # Everything outside B3:E403 and J:K keeps its value.
     assert sheet.cells[(2, 2)] == "GASTOS"
-    assert sheet.cells[(3, 2)] == "FECHA"
     assert sheet.cells[(4, 7)] == "Alimentación"
     assert sheet.cells[(53, 8)] == "=SUM(H4:H52)"
     assert sheet.cells[(4, 10)] == "Ingresos"
@@ -481,10 +495,10 @@ def test_empty_month_still_refreshes_the_panel() -> None:
     assert sheet.panel_ranges == [SUMMARY_WRITE]
     assert sheet.cells[(BALANCE_FIRST_ROW, 10)] == "Revolut"
     assert sheet.cells[(BALANCE_FIRST_ROW, 11)] == 9.99
-    assert sheet.cells.get((4, 2)) is None  # the expense block really is empty
+    assert sheet.cells.get((4, 2)) is None  # the sums block really is empty
 
 
-def test_expense_region_is_written_the_same_way_on_creation_and_update() -> None:
+def test_category_region_is_written_the_same_way_on_creation_and_update() -> None:
     spreadsheet = FakeSpreadsheet()
     writer, _client = _writer(spreadsheet)
     transactions = [_expense(day=1), _expense(day=2)]
@@ -499,8 +513,8 @@ def test_expense_region_is_written_the_same_way_on_creation_and_update() -> None
     # changes cell type between the first run and a later one.
     assert sheet.region_raw_flags == [True, True]
     assert sheet.region_updates[1] == creation_rows
-    assert sheet.cells[(4, 2)] == "2026-08-01"
-    assert sheet.raw_flags == [False, True, True, False]  # grid, expenses, panel
+    assert sheet.cells[(4, 2)] == "SIN CATEGORÍA"
+    assert sheet.raw_flags == [False, True, True, False]  # grid, sums, sums again, panel
     assert sheet.panel_raw_flags == [False]
 
 
@@ -518,7 +532,7 @@ def test_hand_typed_shared_amount_survives_a_second_run() -> None:
     assert sheet.cells[(20, 8)] == 42.5
     assert sheet.cells[(53, 7)] == "Total"
     assert sheet.cells[(53, 8)] == "=SUM(H4:H52)"
-    assert sheet.cells[(4, 2)] == "2026-08-09"
+    assert sheet.cells[(4, 2)] == "SIN CATEGORÍA"
     # No clear or write recorded on the second run mentions the manual block.
     touched = {
         match.group(1)
@@ -542,17 +556,19 @@ def test_hand_typed_cell_inside_the_panel_is_replaced_by_the_refresh() -> None:
     assert sheet.cells[(5, 10)] == "Gastos"
 
 
-def test_second_run_drops_stale_expense_rows_and_handles_an_empty_month() -> None:
+def test_second_run_drops_stale_category_rows_and_handles_an_empty_month() -> None:
     spreadsheet = FakeSpreadsheet()
     writer, _client = _writer(spreadsheet)
     writer.write("doc-1", "2026-08 Gastos", [_expense(day=1), _expense(day=2)], [])
     sheet = spreadsheet.sheets["2026-08 Gastos"]
+    assert sheet.cells[(4, 2)] == "SIN CATEGORÍA"
 
     writer.write("doc-1", "2026-08 Gastos", [], [])
 
     assert sheet.cleared == [EXPENSE_REGION, EXPENSE_REGION, SUMMARY_CLEAR]
-    # No expense write on the empty run; only the creation-time one is recorded.
-    assert len(sheet.region_updates) == 1
+    # The header is rewritten on every run; an empty month adds no sums rows.
+    assert len(sheet.region_updates) == 2
+    assert sheet.region_updates[-1] == [SUMS_HEADERS]
     assert (4, 2) not in sheet.cells
     assert (5, 2) not in sheet.cells
     assert sheet.cells[(4, 7)] == "Alimentación"
@@ -566,22 +582,24 @@ def test_creation_with_an_empty_month_writes_the_skeleton() -> None:
 
     sheet = spreadsheet.sheets["2026-08 Gastos"]
     assert sheet.cells[(2, 2)] == "GASTOS"
-    assert sheet.cells[(3, 2)] == "FECHA"
+    assert sheet.cells[(3, 2)] == "CATEGORÍA"
     assert sheet.cells[(4, 7)] == "Alimentación"
     assert sheet.cells[(53, 8)] == "=SUM(H4:H52)"
     assert sheet.cells.get((4, 2)) is None
 
 
-def test_boundary_month_fills_the_region_exactly() -> None:
+def test_boundary_month_fills_the_sums_block_exactly() -> None:
     spreadsheet = FakeSpreadsheet()
     writer, _client = _writer(spreadsheet)
     writer.write("doc-1", "2026-08 Gastos", [], [])
     sheet = spreadsheet.sheets["2026-08 Gastos"]
 
-    writer.write("doc-1", "2026-08 Gastos", [_expense() for _ in range(400)], [])
+    transactions = [_expense(category=f"CAT {index:02d}") for index in range(50)]
+    writer.write("doc-1", "2026-08 Gastos", transactions, [])
 
-    assert len(sheet.region_updates[-1]) == 400
-    assert sheet.cells[(403, 2)] == "2026-08-01"
+    assert len(sheet.region_updates[-1]) == 51  # header + 50 sums rows
+    assert sheet.cells[(53, 2)] == "CAT 49"
+    assert sheet.cells[(4, 2)] == "CAT 00"
 
 
 # --- failure paths ----------------------------------------------------------
@@ -630,9 +648,10 @@ def test_unreachable_document_logs_the_failure(caplog: pytest.LogCaptureFixture)
 def test_row_ceiling_aborts_before_touching_the_document() -> None:
     spreadsheet = FakeSpreadsheet()
     writer, client = _writer(spreadsheet)
+    transactions = [_expense(category=f"CAT {index:03d}") for index in range(51)]
 
-    with pytest.raises(ValueError, match="400"):
-        writer.write("doc-1", "2026-08 Gastos", [_expense() for _ in range(401)], [])
+    with pytest.raises(ValueError, match="50"):
+        writer.write("doc-1", "2026-08 Gastos", transactions, [])
 
     assert client.opened == []
     assert spreadsheet.added == []

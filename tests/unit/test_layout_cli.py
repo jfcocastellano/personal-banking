@@ -60,12 +60,18 @@ class RecordingWriter:
             raise self.error
 
 
-def _transaction(day: int, amount: str = "-10.00", description: str = "Compra") -> Transaction:
+def _transaction(
+    day: int,
+    amount: str = "-10.00",
+    description: str = "Compra",
+    category: str | None = None,
+) -> Transaction:
     return Transaction(
         booking_date=date(2026, 8, day),
         amount=Decimal(amount),
         currency="EUR",
         description=description,
+        merchant_category_code=category,
     )
 
 
@@ -297,6 +303,31 @@ def test_transactions_become_expense_rows_with_the_bank_name(
         (_BANK_A, "Café", Decimal("-9.50")),
         (_BANK_B, "Nómina", Decimal("1500.00")),
     ]
+    # Uncoded transactions carry an empty category cell.
+    assert all(row.category == "" for row in rows)
+
+
+def test_transaction_category_code_flows_into_the_expense_row_category(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    writer = _install(
+        monkeypatch,
+        [
+            _connector_class(
+                _BANK_A,
+                transactions=[
+                    _transaction(3, "-9.50", "Café", category="5411"),
+                    _transaction(4, "-1.00", "Kiosco", category="9999"),
+                ],
+            ),
+        ],
+        RecordingWriter(),
+    )
+
+    layout_cli.run_layout(month=date(2026, 8, 1), today=date(2026, 8, 31))
+
+    rows = writer.calls[0]["transactions"]
+    assert [row.category for row in rows] == ["ALIMENTACIÓN", "9999"]
 
 
 # --- failure isolation ------------------------------------------------------
