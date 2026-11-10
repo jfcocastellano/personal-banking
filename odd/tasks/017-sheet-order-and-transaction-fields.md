@@ -196,8 +196,8 @@ podemos recuperar» — hence the manual G:H catalogue stays hand-run.
   bank and description columns disappear from this tab: `ExpenseRow`'s display
   row (`_expense_row`, `_sort_key`, `_expense_rows`) and its per-movement
   placement are removed; `ExpenseRow` itself survives as the sums block's input
-  carrier, gaining `category: str | None = None` (resolved label/code) filled
-  by `expense_rows_from_banks`.
+  carrier, gaining `category: str = ""` (the resolved label/code/empty cell,
+  matching `category_cell`'s contract) filled by `expense_rows_from_banks`.
 - **S5** — The `J:K` resumen keeps its labels and stays as now in geometry, but
   its formulas reconnect: «Gastos» = `SUM` over the sums block (C4:C53),
   «Ingresos» = cross-tab `SUMIF` over the movements tab's Importe column
@@ -213,6 +213,31 @@ values are well-formed ISO 18245 codes for ING/Revolut. Every failure degrades
 to an empty cell or `SIN CATEGORÍA`; it costs visibility, never a lost
 transaction. The label table is deliberately partial: unmapped codes fall back
 to the raw code instead of a guessed label.
+
+### T4 — closed across `ec35b4b`, `cffee00`, `7897c84`
+
+Landed in three work units: the connector (S1-S2, RED `ImportError`/missing
+attribute → GREEN 46 tests), the movements tab (S3, RED six-column failures →
+GREEN 60), and the layout slice S4-S6 written by the delegated worker (RED:
+25 failed / 48 passed across the four test files, `ImportError:
+MAX_CATEGORY_ROWS`, `clear outside the writable regions: 'B4:E403'`; GREEN:
+97 tests). Whole-suite verification at close: 372 passed, `mypy` strict clean
+over all 26 sources.
+
+Risks recorded, carried forward:
+
+- On a freshly created tab the sheet has 53 rows while the refresh still
+  `batch_clear`s `B3:E403`; Google Sheets clamps out-of-grid ranges, but that
+  real-API behavior is unverified in production. The affected path is only the
+  first run against a new tab (old tabs keep 403 rows).
+- The success log still reports `rows_written` as the input-transaction count
+  while the block now holds category sums; semantics preserved deliberately,
+  pinned by test.
+- The T3 probe proved field *names* only: the exact ISO codes ING/Revolut send
+  are unknown, so the label table may start sparse (raw fallback makes that
+  harmless, only less readable) and `SIN CATEGORÍA` may be a large bucket.
+- `docs/context.md` keeps its T1 field table; no doc drift beyond that, the
+  root `quickstart.md` describes the new blocks after this branch.
 
 ## Risks carried forward
 
