@@ -103,13 +103,14 @@ values are ISO 18245 categories, not personal data, unlike every other field in 
 Same reasoning as T3 for the level: `INFO`, one line per fetch, because the Actions log is
 where the answer has to be readable. Test-first.
 
-### T4b — Grouping (conditional, blocked on T4a evidence)
+### T4b — folded into T4, never ran as a separate slice
 
-Only if T4a shows the values arrive: widen `Transaction` with `merchant_category_code`,
-`entry_reference` and the counterparty name, carry them through the writer, and expose a
-grouping that the expenses tab can use. Not planned in detail until the measurement exists.
-If the codes come back empty or absent, the grouping has to be derived from the counterparty
-and the description instead, which is a different design.
+T4b was conditional on T4a: widen `Transaction` with `merchant_category_code`,
+`entry_reference` and the counterparty name, then expose a grouping the expenses tab could
+use. The owner gave a direction before the measurement existed, so the widening and the
+grouping landed directly as T4 (`82cedbd`, #34), and `entry_reference` plus the
+counterparties were dropped from that slice as YAGNI. T4a survives as measurement only —
+see Evidence.
 
 ## Out of scope
 
@@ -176,21 +177,101 @@ proves a field can arrive and the movement still be discarded).
 One existing test had to change: `test_success_logs_structured_record` asserted a single INFO
 record for that logger, which was true only while the connector logged once per fetch.
 
-### T3 — answer received in production run `42831483339` (2026-11-10)
+### T4 — Categories as data and as presentation (owner-directed, unblocked by production evidence)
 
-The probe reported from the 14:10 UTC cron run on `main`, over 26 ING records and 1 Revolut
-record:
+The T3 probe answered the blocking question on the 2026-11-10 scheduled run
+(Actions run `42831483339`): `merchant_category_code` and `entry_reference`
+appear in the `keys=` list for both ING España (records=26) and Revolut
+(records=1). The fields arrive; the category can be surfaced.
 
-```text
-Connector ING España: transaction fields, records=26, keys=balance_after_transaction,bank_transaction_code,booking_date,...,merchant_category_code,entry_reference,creditor,debtor,...
-Connector Revolut:    transaction fields, records=1,  keys=balance_after_transaction,bank_transaction_code,booking_date,...,merchant_category_code,entry_reference,creditor,debtor,...
-```
+**Owner direction (2026-11-10, verbatim).** First statement: «Que en la pestaña
+de movimientos se muestre tambien la categoria como una columna mas, y que en
+la pestaña de gastos muestre los movimientos igual que en la otra pestaña y
+que ademas haga la agrupacion y sumatorio por categoria». Then revised after
+reviewing the geometry: «creo que mejor dejar la pestaña 2026-11 con los
+movimientos (junto con la categoria) y en la pestaña 2026-11 Gastos hacer la
+agrupacion por categoria, sin fecha, sin banco, sin descripcion, solo los
+sumatorios. Ejemplos: alimentacion 58€, ropa 23€, etc. Los gastos comunes y el
+resumen se dejarian como hasta ahora». Decisions given as option answers:
+«Solo sumatorios, sin lista de movimientos» and «Etiquetas en español +
+fallback al código». Added context: «Gastos comunes son gastos de la cuenta
+conjunta del hogar, y corresponderian con los movimientos del Sabadell, que no
+podemos recuperar» — hence the manual G:H catalogue stays hand-run.
 
-Both banks send the whole documented set; `transaction_id` is there too, still unusable as an
-id. This closes the question T3 was built for and opens T4a: the probe proves key names, not
-values, so the populated-count measurement is the next step.
+**Spec for this slice (S# = verbatim-derived rules):**
 
-### T4a — closed in `231587b`
+- **S1** — New module `src/banking/categories.py`: a static ISO 18245 →
+  Spanish-label table for common consumer codes, and `category_cell(code)` →
+  mapped label, else the raw code, else `""`. No network, no invented labels.
+- **S2** — `_parse_transaction` keeps `merchant_category_code` (empty/whitespace
+  or absent → `None`, never aborts the record). `entry_reference` and the
+  counterparty names are **dropped from this slice**: nothing requested consumes
+  them (YAGNI); the T3 probe keeps recording key names for a future decision.
+- **S3** — The raw tab becomes **six columns**: `_HEADERS` gains "Categoría",
+  `_transaction_row` appends `category_cell(tx.merchant_category_code)`.
+  Sort key unchanged (category is never a tiebreaker).
+- **S4** — The `Gastos` tab replaces the per-movement block with the category
+  sums block only: headers `CATEGORÍA` / `TOTAL GASTOS` at B3/C3, then one row
+  per category: label in B, signed total in C. Grouping covers expenses only
+  (`amount < 0`): incomes never inflate the block. Transactions without a
+  category code group under the label `SIN CATEGORÍA` so the sums still add up.
+  Order: descending total, then ascending label — deterministic. Cap 50 rows
+  (`MAX_CATEGORY_ROWS`), exceeded → `ValueError` before any write. The date,
+  bank and description columns disappear from this tab: `ExpenseRow`'s display
+  row (`_expense_row`, `_sort_key`, `_expense_rows`) and its per-movement
+  placement are removed; `ExpenseRow` itself survives as the sums block's input
+  carrier, gaining `category: str = ""` (the resolved label/code/empty cell,
+  matching `category_cell`'s contract) filled by `expense_rows_from_banks`.
+- **S5** — The `J:K` resumen keeps its labels and stays as now in geometry, but
+  its formulas reconnect: «Gastos» = `SUM` over the sums block (C4:C53),
+  «Ingresos» = cross-tab `SUMIF` over the movements tab's Importe column
+  (the tab name is derived from the layout tab name by stripping the
+  " Gastos" suffix — both composed by `layout_tab_name`/`daily.py`). Numbers
+  must match the pre-change resumen for unchanged input.
+- **S6** — Refresh path clears the legacy `B3:E403` region (old headers + rows
+  from pre-T4 tabs) and writes `B3:C...` RAW; creation writes the new grid
+  whole. G:H and J:K geometry untouched; money format moves from E to C.
+
+**Known risk carried**: the production probe proved field *names*, not that the
+values are well-formed ISO 18245 codes for ING/Revolut. Every failure degrades
+to an empty cell or `SIN CATEGORÍA`; it costs visibility, never a lost
+transaction. The label table is deliberately partial: unmapped codes fall back
+to the raw code instead of a guessed label.
+
+### T4 — closed across `ec35b4b`, `cffee00`, `7897c84`
+
+Landed in three work units: the connector (S1-S2, RED `ImportError`/missing
+attribute → GREEN 46 tests), the movements tab (S3, RED six-column failures →
+GREEN 60), and the layout slice S4-S6 written by the delegated worker (RED:
+25 failed / 48 passed across the four test files, `ImportError:
+MAX_CATEGORY_ROWS`, `clear outside the writable regions: 'B4:E403'`; GREEN:
+97 tests). Whole-suite verification at close: 372 passed, `mypy` strict clean
+over all 26 sources.
+
+Risks recorded, carried forward:
+
+- On a freshly created tab the sheet has 53 rows while the refresh still
+  `batch_clear`s `B3:E403`; Google Sheets clamps out-of-grid ranges, but that
+  real-API behavior is unverified in production. The affected path is only the
+  first run against a new tab (old tabs keep 403 rows).
+- The success log still reports `rows_written` as the input-transaction count
+  while the block now holds category sums; semantics preserved deliberately,
+  pinned by test.
+- The T3 probe proved field *names* only: the exact ISO codes ING/Revolut send
+  are unknown, so the label table may start sparse (raw fallback makes that
+  harmless, only less readable) and `SIN CATEGORÍA` may be a large bucket.
+- `docs/context.md` keeps its T1 field table; no doc drift beyond that, the
+  root `quickstart.md` describes the new blocks after this branch.
+
+### T4a — closed in `231587b`, as measurement rather than gate
+
+This task was written as a gate: measure whether `merchant_category_code` carries
+a value before widening `Transaction`. The gate is gone — T4 landed directly on
+`main` (#34) on the owner's direction, and `Transaction` now carries the code.
+What T4a survives as is exactly the risk T4 lists above: *which* codes ING España
+and Revolut send, and how many records carry a usable one. Those are the two
+numbers that say whether the label table starts sparse and how large the
+`SIN CATEGORÍA` bucket is.
 
 RED observed before GREEN, over the probe line T3 already produced:
 
@@ -209,20 +290,28 @@ Connector ING España: transaction fields, records=26, keys=..., mcc_populated=N
 - `_FieldProbe` owns the aggregate; `observe` is the only place that touches a raw
   record, so the value boundary lives in one spot instead of inline in
   `fetch_transactions` (which was at the complexity ceiling before this change).
-- `_merchant_category_code` accepts only a non-empty string. Five tests: the populated
-  count, the four unusable values (`absent`, `null`, `empty`, `whitespace-only`), distinct
-  codes sorted, records discarded by `status` still counted (`2/2` with one surviving
-  movement), and a non-string `5812` not guessed at.
-- Every seen record counts, including the ones later dropped by status, date or parse:
-  a field can arrive on a movement that is still discarded, which is the case the probe
-  exists to reveal.
-- Values stay out: the existing leak assertions still pass, and the only data reaching
-  the log beyond key names is the MCC itself.
+- The probe resolves the code through `_optional_text` — the same rule
+  `_parse_transaction` applies — so the count can never disagree with the
+  `Transaction` it sits beside. A second copy of that rule was dropped while this
+  branch was reconciled with #34 rather than kept: two definitions of "populated"
+  would have drifted silently. That deduplication, and this document, arrived in
+  the merge commit that brought `main` into the branch, because the pushed branch
+  is the history and rewriting it was not authorized.
+- Five tests fix the aggregate: the populated count, the four unusable values
+  (`absent`, `null`, `empty`, `whitespace-only`), distinct codes sorted, records
+  discarded by `status` still counted (`2/2` with one surviving movement), and a
+  non-string `5812` not guessed at.
+- Every seen record counts, including the ones later dropped by status, date or
+  parse: a field can arrive on a movement that is still discarded, which is the
+  case the measurement exists to reveal.
+- Values stay out: the probe-line leak assertions still pass, and the only value
+  reaching that line beyond key names is the MCC itself.
 
-**What this does not prove:** whether the production payload carries a value. The five
-new tests prove the measurement is correct, not that the banks populate the field. One
-`sync.yml` run answers it at zero extra PSD2 cost, because the aggregate rides on the
-fetch that already happens. Nothing in T4b is authorized until that line is read.
+**What this does not prove:** whether the production payload carries a value. The
+five tests prove the measurement is correct, not that the banks populate the
+field. One `sync.yml` run answers it at no extra PSD2 cost, because the aggregate
+rides on the fetch that already happens — and after #34 that answer decides
+label-table coverage, not whether to widen `Transaction`.
 
 ## Risks carried forward
 

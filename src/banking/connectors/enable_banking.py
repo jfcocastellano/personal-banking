@@ -97,6 +97,7 @@ class Transaction:
     amount: Decimal
     currency: str
     description: str
+    merchant_category_code: str | None = None
 
 
 @dataclass(frozen=True)
@@ -188,20 +189,6 @@ def _join_remittance_information(raw_remittance: object) -> str:
     return str(raw_remittance) if raw_remittance else ""
 
 
-def _merchant_category_code(raw: dict[str, Any]) -> str | None:
-    """The merchant category code of a record, or None when it carries no category.
-
-    The API declares the field as a string. Anything else — absent, ``None``,
-    empty or whitespace-only — carries no category, and a malformed non-string is
-    not guessed at: reporting it as populated would invent a value the bank never
-    sent.
-    """
-    code = raw.get("merchant_category_code")
-    if isinstance(code, str) and code.strip():
-        return code.strip()
-    return None
-
-
 @dataclass
 class _FieldProbe:
     """Which transaction fields a bank returned for one fetch, plus the MCC answer.
@@ -211,6 +198,10 @@ class _FieldProbe:
     rather than personal data. Amounts, dates, remittance text, references and
     counterparties stay out of the log. ``observe`` is the only place that touches
     a raw record, so that boundary lives in one spot instead of at the call site.
+
+    The code is resolved through ``_optional_text``, the same rule
+    ``_parse_transaction`` applies, so this count can never disagree with the
+    ``Transaction`` it sits beside.
 
     Deliberately INFO: the Actions run log is where the answer has to be readable,
     and a scheduled run cannot raise ``LOG_LEVEL``.
@@ -230,7 +221,7 @@ class _FieldProbe:
         """
         self.record_count += 1
         self.field_names.update(raw.keys())
-        code = _merchant_category_code(raw)
+        code = _optional_text(raw, "merchant_category_code")
         if code is not None:
             self.mcc_populated += 1
             self.mcc_codes.add(code)
@@ -274,8 +265,28 @@ def _parse_transaction(raw: dict[str, Any]) -> Transaction | None:
         return None
 
     return Transaction(
-        booking_date=booking_date, amount=magnitude, currency=currency, description=description
+        booking_date=booking_date,
+        amount=magnitude,
+        currency=currency,
+        description=description,
+        merchant_category_code=_optional_text(raw, "merchant_category_code"),
     )
+
+
+def _optional_text(raw: dict[str, Any], key: str) -> str | None:
+    """An optional string record member: present non-blank text, else None.
+
+    Optional provider data must never abort the whole record: any non-string
+    value a provider sends anyway is logged at debug and treated as missing.
+    """
+    value = raw.get(key)
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        logger.debug("Ignoring non-string optional field %s: %r", key, value)
+        return None
+    normalized = value.strip()
+    return normalized if normalized else None
 
 
 def _parse_balance(raw: dict[str, Any]) -> Balance | None:

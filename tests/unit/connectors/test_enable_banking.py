@@ -47,14 +47,18 @@ def _raw_tx(
     currency: str = "EUR",
     indicator: str = "CRDT",
     description: str = "Test tx",
+    merchant_category_code: str | None = None,
 ) -> dict:
-    return {
+    raw = {
         "status": status,
         "booking_date": booking_date,
         "transaction_amount": {"amount": amount, "currency": currency},
         "credit_debit_indicator": indicator,
         "remittance_information": [description] if description else [],
     }
+    if merchant_category_code is not None:
+        raw["merchant_category_code"] = merchant_category_code
+    return raw
 
 
 # ---------------------------------------------------------------------------
@@ -151,6 +155,60 @@ def test_empty_range_returns_empty_list(eb_config_dir, fake_session_id_in_store,
     result = connector.fetch_transactions(date(2026, 8, 1), date(2026, 8, 31))
 
     assert result == []
+
+
+def test_merchant_category_code_is_kept_as_a_field(
+    eb_config_dir, fake_session_id_in_store, mock_http_client
+):
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "transactions": [
+                    _raw_tx(description="Supermercado", merchant_category_code="5411")
+                ],
+                "continuation_key": None,
+            },
+        )
+
+    connector = _FakeConnector(http_client=mock_http_client(handler))
+    result = connector.fetch_transactions(date(2026, 8, 1), date(2026, 8, 31))
+
+    assert [tx.merchant_category_code for tx in result] == ["5411"]
+
+
+def test_absent_merchant_category_code_parses_as_none(
+    eb_config_dir, fake_session_id_in_store, mock_http_client
+):
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={"transactions": [_raw_tx(description="Sin codigo")], "continuation_key": None},
+        )
+
+    connector = _FakeConnector(http_client=mock_http_client(handler))
+    result = connector.fetch_transactions(date(2026, 8, 1), date(2026, 8, 31))
+
+    assert [tx.merchant_category_code for tx in result] == [None]
+
+
+def test_malformed_merchant_category_code_does_not_drop_the_record(
+    eb_config_dir, fake_session_id_in_store, mock_http_client
+):
+    def handler(request: httpx.Request) -> httpx.Response:
+        raw = _raw_tx(description="Compra con categoria rota")
+        raw["merchant_category_code"] = 5411
+        return httpx.Response(
+            200,
+            json={"transactions": [raw], "continuation_key": None},
+        )
+
+    connector = _FakeConnector(http_client=mock_http_client(handler))
+    result = connector.fetch_transactions(date(2026, 8, 1), date(2026, 8, 31))
+
+    # The malformed category degrades to None; the record itself survives.
+    assert [tx.description for tx in result] == ["Compra con categoria rota"]
+    assert [tx.merchant_category_code for tx in result] == [None]
 
 
 def test_deduplicates_transaction_repeated_across_page_boundary(
