@@ -6,7 +6,7 @@ import logging
 import os
 import time
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
@@ -188,27 +188,67 @@ def _join_remittance_information(raw_remittance: object) -> str:
     return str(raw_remittance) if raw_remittance else ""
 
 
-def _log_seen_transaction_fields(bank_name: str, record_count: int, field_names: set[str]) -> None:
-    """Log which transaction fields a bank actually returned, names only.
+def _merchant_category_code(raw: dict[str, Any]) -> str | None:
+    """The merchant category code of a record, or None when it carries no category.
 
-    Deliberately INFO: the Actions run log is where the answer has to be
-    readable, and a scheduled run cannot raise ``LOG_LEVEL``. Only field names
-    reach the log — never values, so no amount, date, remittance text or
-    reference can leak.
-
-    Args:
-        bank_name: The bank the records belong to.
-        record_count: How many transaction records the fetch saw.
-        field_names: The union of the key names present in those records.
+    The API declares the field as a string. Anything else — absent, ``None``,
+    empty or whitespace-only — carries no category, and a malformed non-string is
+    not guessed at: reporting it as populated would invent a value the bank never
+    sent.
     """
-    if record_count == 0:
-        return
-    logger.info(
-        "Connector %s: transaction fields, records=%d, keys=%s",
-        bank_name,
-        record_count,
-        ",".join(sorted(field_names)),
-    )
+    code = raw.get("merchant_category_code")
+    if isinstance(code, str) and code.strip():
+        return code.strip()
+    return None
+
+
+@dataclass
+class _FieldProbe:
+    """Which transaction fields a bank returned for one fetch, plus the MCC answer.
+
+    Deliberately value-blind for every field except the merchant category code:
+    logging key *names* cannot leak anything, and the MCC is an ISO 18245 category
+    rather than personal data. Amounts, dates, remittance text, references and
+    counterparties stay out of the log. ``observe`` is the only place that touches
+    a raw record, so that boundary lives in one spot instead of at the call site.
+
+    Deliberately INFO: the Actions run log is where the answer has to be readable,
+    and a scheduled run cannot raise ``LOG_LEVEL``.
+    """
+
+    record_count: int = 0
+    field_names: set[str] = field(default_factory=set)
+    mcc_populated: int = 0
+    mcc_codes: set[str] = field(default_factory=set)
+
+    def observe(self, raw: dict[str, Any]) -> None:
+        """Fold one API transaction record into the aggregates.
+
+        Every record seen counts, including the ones later discarded by status,
+        date or parse failure: a field can arrive on a movement that is still
+        dropped, and that is exactly what this probe is meant to reveal.
+        """
+        self.record_count += 1
+        self.field_names.update(raw.keys())
+        code = _merchant_category_code(raw)
+        if code is not None:
+            self.mcc_populated += 1
+            self.mcc_codes.add(code)
+
+    def log(self, bank_name: str) -> None:
+        """Log one line per fetch; nothing when the fetch saw no records."""
+        if self.record_count == 0:
+            return
+        logger.info(
+            "Connector %s: transaction fields, records=%d, keys=%s, mcc_populated=%d/%d, "
+            "mcc_codes=%s",
+            bank_name,
+            self.record_count,
+            ",".join(sorted(self.field_names)),
+            self.mcc_populated,
+            self.record_count,
+            ",".join(sorted(self.mcc_codes)) or "-",
+        )
 
 
 def _parse_transaction(raw: dict[str, Any]) -> Transaction | None:
@@ -566,8 +606,7 @@ class EnableBankingConnector:
         credential, account_id = self._resolve_session(start_date, end_date)
 
         results: dict[tuple[date, Decimal, str], Transaction] = {}
-        seen_field_names: set[str] = set()
-        seen_record_count = 0
+        probe = _FieldProbe()
         continuation_key: str | None = None
         url = f"{_BASE_URL}/accounts/{account_id}/transactions"
 
@@ -602,8 +641,7 @@ class EnableBankingConnector:
             body = response.json()
 
             for raw_tx in body.get("transactions", []):
-                seen_record_count += 1
-                seen_field_names.update(raw_tx.keys())
+                probe.observe(raw_tx)
                 if raw_tx.get("status") != "BOOK":
                     continue
                 tx = _parse_transaction(raw_tx)
@@ -632,7 +670,7 @@ class EnableBankingConnector:
             )
 
         transactions = list(results.values())
-        _log_seen_transaction_fields(self.BANK_NAME, seen_record_count, seen_field_names)
+        probe.log(self.BANK_NAME)
         logger.info(
             "Connector %s: range %s to %s, %d records retrieved, status=success",
             self.BANK_NAME,
