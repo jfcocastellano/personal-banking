@@ -57,6 +57,13 @@ Today `_parse_transaction` (`src/banking/connectors/enable_banking.py:190-216`) 
 That is the only open question, and it costs no extra PSD2 request: the payload already
 arrives on every run.
 
+**Update 2026-11-10:** the key names are answered (see the T3 evidence below). The 14:10 UTC
+production run reports both banks carrying `merchant_category_code`,
+`bank_transaction_code`, `entry_reference`, `creditor`/`debtor`, `value_date` and
+`balance_after_transaction`. What remains unverified is narrower and different: **whether
+those keys carry a value** rather than `null` or `""`. A key present in the JSON is not a
+populated field, and the probe logs names only by design.
+
 ## Scope
 
 ### T1 — Correct the falsified premise and document the available fields
@@ -82,11 +89,27 @@ somebody (`src/banking/logging_config.py:14` exists, but a scheduled run cannot 
 Test-first against a fake payload that carries `status`, `merchant_category_code` and
 `entry_reference`.
 
-### T4 — Grouping (conditional, blocked on T3 evidence)
+### T4a — Measure whether the category field is actually populated
 
-Only if T3 shows the fields arrive: widen `Transaction` with `merchant_category_code`,
+T3 answered the cheap half: the key names arrive. It cannot answer whether a value comes with
+them, and widening `Transaction` on the assumption that it does would ship a column that is
+empty for every row.
+
+The measurement has to stay PII-free, so it cannot log a record. It logs one aggregate per
+fetch, next to the existing probe: how many records carried a non-empty
+`merchant_category_code` out of how many were seen, and the distinct codes themselves — MCC
+values are ISO 18245 categories, not personal data, unlike every other field in the record.
+
+Same reasoning as T3 for the level: `INFO`, one line per fetch, because the Actions log is
+where the answer has to be readable. Test-first.
+
+### T4b — Grouping (conditional, blocked on T4a evidence)
+
+Only if T4a shows the values arrive: widen `Transaction` with `merchant_category_code`,
 `entry_reference` and the counterparty name, carry them through the writer, and expose a
-grouping that the expenses tab can use. Not planned in detail until the evidence exists.
+grouping that the expenses tab can use. Not planned in detail until the measurement exists.
+If the codes come back empty or absent, the grouping has to be derived from the counterparty
+and the description instead, which is a different design.
 
 ## Out of scope
 
@@ -153,19 +176,63 @@ proves a field can arrive and the movement still be discarded).
 One existing test had to change: `test_success_logs_structured_record` asserted a single INFO
 record for that logger, which was true only while the connector logged once per fetch.
 
-### T4 — blocked, waiting for one scheduled run
+### T3 — answer received in production run `42831483339` (2026-11-10)
 
-Nothing more can be built until the probe reports from production. The next `sync.yml` run
-answers it at zero cost: `merchant_category_code` in that `keys=` list means the tag arrives and
-T4 can widen `Transaction`; its absence means the grouping has to be derived from the
-counterparty and the description, which is a different design.
+The probe reported from the 14:10 UTC cron run on `main`, over 26 ING records and 1 Revolut
+record:
+
+```text
+Connector ING España: transaction fields, records=26, keys=balance_after_transaction,bank_transaction_code,booking_date,...,merchant_category_code,entry_reference,creditor,debtor,...
+Connector Revolut:    transaction fields, records=1,  keys=balance_after_transaction,bank_transaction_code,booking_date,...,merchant_category_code,entry_reference,creditor,debtor,...
+```
+
+Both banks send the whole documented set; `transaction_id` is there too, still unusable as an
+id. This closes the question T3 was built for and opens T4a: the probe proves key names, not
+values, so the populated-count measurement is the next step.
+
+### T4a — closed in `231587b`
+
+RED observed before GREEN, over the probe line T3 already produced:
+
+```text
+AssertionError: Connector Fake Bank: transaction fields, records=2, keys=booking_date,credit_debit_indicator,merchant_category_code,remittance_information,status,transaction_amount
+E  assert 'mcc_populated=1/2' in '... keys=... merchant_category_code ...'
+7 failed, 39 deselected
+```
+
+The line now carries the answer next to the field names it already logged:
+
+```text
+Connector ING España: transaction fields, records=26, keys=..., mcc_populated=N/26, mcc_codes=5411,5812
+```
+
+- `_FieldProbe` owns the aggregate; `observe` is the only place that touches a raw
+  record, so the value boundary lives in one spot instead of inline in
+  `fetch_transactions` (which was at the complexity ceiling before this change).
+- `_merchant_category_code` accepts only a non-empty string. Five tests: the populated
+  count, the four unusable values (`absent`, `null`, `empty`, `whitespace-only`), distinct
+  codes sorted, records discarded by `status` still counted (`2/2` with one surviving
+  movement), and a non-string `5812` not guessed at.
+- Every seen record counts, including the ones later dropped by status, date or parse:
+  a field can arrive on a movement that is still discarded, which is the case the probe
+  exists to reveal.
+- Values stay out: the existing leak assertions still pass, and the only data reaching
+  the log beyond key names is the MCC itself.
+
+**What this does not prove:** whether the production payload carries a value. The five
+new tests prove the measurement is correct, not that the banks populate the field. One
+`sync.yml` run answers it at zero extra PSD2 cost, because the aggregate rides on the
+fetch that already happens. Nothing in T4b is authorized until that line is read.
 
 ## Risks carried forward
 
 - **`fetch_transactions` sits exactly at the complexity ceiling (10)** — measured at 10 before
-  this branch too, so the probe did not push it there. Any next change to that method must
+  this branch too, so the probe did not push it there. T4a moved the aggregate into
+  `_FieldProbe` instead of adding counters inline. Any next change to that method must
   extract a helper rather than add a branch.
 - The probe's `keys=` list includes `remittance_information` as a *name* while never logging its
-  text. Harmless in a private log, worth stating if the run log ever becomes shareable output.
+  text, and since T4a the line also carries the MCC values themselves. Harmless in a private
+  log — an ISO 18245 category is not personal data — but worth stating if the run log ever
+  becomes shareable output.
 - Pagination that raises (auth, rate limit, `PaginationIncomplete`) emits no probe line, so a
   failed fetch is silent about fields rather than misleading.
