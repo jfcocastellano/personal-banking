@@ -304,14 +304,168 @@ def test_fetch_logs_the_field_names_each_record_carries(
     assert "records=1" in line
     for field_name in ("status", "merchant_category_code", "entry_reference"):
         assert field_name in line, f"the probe must name {field_name}: {line}"
+    # The MCC is the one value the probe may log: an ISO 18245 category is not
+    # personal data, and measuring whether banks populate it requires the value.
+    assert "mcc_populated=1/1" in line
+    assert "mcc_codes=5411" in line
     for value in (
-        "5411",
         "REF-UNICA-0001",
         "NOMINA CONFIDENCIAL SL",
         "42.50",
         "2026-08-15",
     ):
         assert value not in line, f"the probe must never log values, leaked {value}: {line}"
+
+
+def test_fetch_counts_a_populated_merchant_category_code(
+    caplog, eb_config_dir, fake_session_id_in_store, mock_http_client
+):
+    record_payload = {
+        "status": "BOOK",
+        "booking_date": "2026-08-15",
+        "transaction_amount": {"amount": "42.50", "currency": "EUR"},
+        "credit_debit_indicator": "DBIT",
+        "remittance_information": ["COMPRA SUPERMERCADO"],
+        "merchant_category_code": "5411",
+        "entry_reference": "REF-UNICA-0002",
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200, json={"transactions": [record_payload], "continuation_key": None}
+        )
+
+    connector = _FakeConnector(http_client=mock_http_client(handler))
+    with caplog.at_level(logging.INFO, logger="banking.connectors.enable_banking"):
+        connector.fetch_transactions(date(2026, 8, 1), date(2026, 8, 31))
+
+    probe_lines = _field_probe_lines(caplog)
+    assert len(probe_lines) == 1
+    line = probe_lines[0]
+    assert "mcc_populated=1/1" in line, line
+    assert "mcc_codes=5411" in line, line
+    # Allowing the MCC value must not widen the probe to any other value.
+    for value in ("REF-UNICA-0002", "COMPRA SUPERMERCADO", "42.50", "2026-08-15"):
+        assert value not in line, f"the probe must never log values, leaked {value}: {line}"
+
+
+@pytest.mark.parametrize(
+    "mcc_payload",
+    [
+        pytest.param({}, id="absent"),
+        pytest.param({"merchant_category_code": None}, id="null"),
+        pytest.param({"merchant_category_code": ""}, id="empty"),
+        pytest.param({"merchant_category_code": "  "}, id="whitespace-only"),
+    ],
+)
+def test_fetch_reports_no_populated_mcc_when_the_value_is_unusable(
+    mcc_payload,
+    caplog,
+    eb_config_dir,
+    fake_session_id_in_store,
+    mock_http_client,
+):
+    record_payload = {**_raw_tx(description="Compra"), **mcc_payload}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200, json={"transactions": [record_payload], "continuation_key": None}
+        )
+
+    connector = _FakeConnector(http_client=mock_http_client(handler))
+    with caplog.at_level(logging.INFO, logger="banking.connectors.enable_banking"):
+        connector.fetch_transactions(date(2026, 8, 1), date(2026, 8, 31))
+
+    probe_lines = _field_probe_lines(caplog)
+    assert len(probe_lines) == 1
+    line = probe_lines[0]
+    assert "mcc_populated=0/1" in line, line
+    assert "mcc_codes=-" in line, line
+
+
+def test_fetch_reports_distinct_mcc_codes_sorted_ascending(
+    caplog, eb_config_dir, fake_session_id_in_store, mock_http_client
+):
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "transactions": [
+                    {**_raw_tx(description="Uno"), "merchant_category_code": "5812"},
+                    {**_raw_tx(description="Dos"), "merchant_category_code": "5411"},
+                    {**_raw_tx(description="Tres"), "merchant_category_code": "5812"},
+                ],
+                "continuation_key": None,
+            },
+        )
+
+    connector = _FakeConnector(http_client=mock_http_client(handler))
+    with caplog.at_level(logging.INFO, logger="banking.connectors.enable_banking"):
+        connector.fetch_transactions(date(2026, 8, 1), date(2026, 8, 31))
+
+    probe_lines = _field_probe_lines(caplog)
+    assert len(probe_lines) == 1
+    line = probe_lines[0]
+    assert "mcc_populated=3/3" in line, line
+    # Insertion order is 5812 then 5411, so a naive join would log 5812,5411.
+    assert "mcc_codes=5411,5812" in line, line
+    assert line.count("5812") == 1, f"mcc_codes must be distinct: {line}"
+
+
+def test_fetch_counts_mcc_of_records_filtered_out_by_status(
+    caplog, eb_config_dir, fake_session_id_in_store, mock_http_client
+):
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "transactions": [
+                    {**_raw_tx(status="BOOK"), "merchant_category_code": "5411"},
+                    {**_raw_tx(status="PDNG"), "merchant_category_code": "5812"},
+                ],
+                "continuation_key": None,
+            },
+        )
+
+    connector = _FakeConnector(http_client=mock_http_client(handler))
+    with caplog.at_level(logging.INFO, logger="banking.connectors.enable_banking"):
+        result = connector.fetch_transactions(date(2026, 8, 1), date(2026, 8, 31))
+
+    assert len(result) == 1
+    probe_lines = _field_probe_lines(caplog)
+    assert len(probe_lines) == 1
+    line = probe_lines[0]
+    # The probe counts every record the fetch saw, like records= already does.
+    assert "records=2" in line, line
+    assert "mcc_populated=2/2" in line, line
+    assert "mcc_codes=5411,5812" in line, line
+
+
+def test_fetch_ignores_a_malformed_non_string_mcc(
+    caplog, eb_config_dir, fake_session_id_in_store, mock_http_client
+):
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "transactions": [
+                    {**_raw_tx(description="Uno"), "merchant_category_code": "5411"},
+                    {**_raw_tx(description="Dos"), "merchant_category_code": 5812},
+                ],
+                "continuation_key": None,
+            },
+        )
+
+    connector = _FakeConnector(http_client=mock_http_client(handler))
+    with caplog.at_level(logging.INFO, logger="banking.connectors.enable_banking"):
+        connector.fetch_transactions(date(2026, 8, 1), date(2026, 8, 31))
+
+    probe_lines = _field_probe_lines(caplog)
+    assert len(probe_lines) == 1
+    line = probe_lines[0]
+    # The API declares this field as a string; a non-string is not guessed at.
+    assert "mcc_populated=1/2" in line, line
+    assert "mcc_codes=5411" in line, line
 
 
 def test_fetch_logs_no_field_probe_when_the_account_returns_no_records(
@@ -349,6 +503,8 @@ def test_fetch_logs_the_field_probe_even_when_every_record_is_filtered_out(
     assert len(probe_lines) == 1
     assert "records=1" in probe_lines[0]
     assert "status" in probe_lines[0]
+    assert "mcc_populated=0/1" in probe_lines[0]
+    assert "mcc_codes=-" in probe_lines[0]
 
 
 def test_fetch_logs_the_field_probe_once_per_fetch_not_once_per_page(
