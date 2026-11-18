@@ -2,7 +2,7 @@
 
 > **Fuente de verdad del proyecto.** Este documento debe mantenerse actualizado ante cualquier cambio de requisitos, stack o decisiones de diseño.
 >
-> Última actualización: 2026-11-04
+> Última actualización: 2026-11-18
 
 ---
 
@@ -19,8 +19,17 @@ Las secciones 1–5 describen el **contrato objetivo** del proyecto. No hay que 
 | IT5 | Multi-banco con resiliencia parcial | Implementada |
 | IT6 | Notificación de errores por email | Implementada |
 | IT7 | Scheduler en GitHub Actions | Implementada (2026-10-17) |
+| IT8 | Pasada diaria única, crudo + layout (`banking daily`) | Implementada (2026-11-07) |
+| 010 | Diagnóstico de errores de Enable Banking (cuerpo del `422`) | Implementada |
+| 011 | Verificación del layout contra el documento real | Implementada (documentación) |
+| 012 | Bloqueo de MyInvestor y Sabadell en el login documentado | Implementada (documentación) |
+| 017 | Orden de pestañas consistente y campos reales de la transacción | En curso |
 
-Las siete iteraciones del roadmap están implementadas: el scheduler automático (UC1), el disparo manual vía `workflow_dispatch` (UC2) y la notificación por email ante fallo (UC3) viven ya en el repositorio. La planificación vive en `docs/roadmap.md`.
+Las ocho iteraciones del roadmap están implementadas: el scheduler automático (UC1), el disparo manual vía `workflow_dispatch` (UC2) y la notificación por email ante fallo (UC3) viven ya en el repositorio. La planificación de intención vive en `docs/roadmap.md`; el trabajo posterior a IT8 no se planifica ahí sino en `odd/tasks/`, con una entrada por unidad de trabajo.
+
+IT8 se construyó en dos unidades que el roadmap registra juntas: la pestaña de layout (`specs/008-monthly-sheet-layout/`) y la pasada diaria única que escribe ambas pestañas con un solo recorrido (`specs/016-single-daily-pass/`). Desde entonces el scheduler ejecuta `banking daily`, no `sync`.
+
+**Deuda conocida de documentación**: las cabeceras de `specs/002`-`specs/008` y `specs/016` siguen rotuladas «Borrador» / «Draft» aunque su trabajo está implementado y fusionado (`specs/001` sí dice «Implemented»; `specs/010` no tiene cabecera porque solo tiene `tasks.md`). El estado real es el de esta tabla. Cualquier lectura de esas cabeceras como estado del proyecto es incorrecta.
 
 **Observabilidad**
 Implementada en `src/banking/logging_config.py`. El entry point de la CLI instala sobre el logger raíz el formato exigido por la constitución (`%(asctime)s %(levelname)s %(name)s: %(message)s`) y resuelve el nivel desde la variable de entorno `LOG_LEVEL` (por defecto `INFO`; un valor no reconocido cae a `INFO`, para que un error de tipeo no aborte una sincronización). Importar `banking` nunca reconfigura el logging de la aplicación anfitriona.

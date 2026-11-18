@@ -502,6 +502,25 @@ IT5 solo necesita el patrón de IT2; IT6 necesita el pipeline de IT4.
 
 ---
 
+## Trabajo posterior a IT8
+
+Este roadmap es un plan de registro, no un tablero: no lleva marcas de estado. El estado
+vivo de cada iteración está en `docs/context.md`, sección «Estado actual de la
+implementación».
+
+Lo posterior a IT8 no se escribe acá: se planifica en `odd/tasks/`, una entrada por unidad
+de trabajo, con su diagnóstico y su evidencia. Ya aterrizaron en `main` el diagnóstico de
+errores de Enable Banking (`010`), la verificación del layout (`011`), el bloqueo de
+MyInvestor y Sabadell documentado (`012`), el resumen de ejecución publicado desde un
+documento JSON y no raspado del log (`odd/tasks/016-summary-json.md`) y las tres piezas
+de `017` sobre orden de pestañas y campos de la transacción. La única entrada abierta es
+`017-sheet-order-and-transaction-fields.md`.
+
+El roadmap sigue siendo el documento de intención: si una de las candidatas de abajo se
+acepta, se promueve a iteración acá antes de implementarse.
+
+---
+
 ## Candidatas no comprometidas
 
 Ninguna de estas está aceptada todavía: no tienen alcance cerrado, ni
