@@ -210,10 +210,22 @@ columna `Categoría` de la pestaña cruda está vacía en todas las filas y la
 pestaña de gastos agrupa el mes entero bajo `SIN CATEGORÍA`. El mapa ISO 18245
 de `src/banking/categories.py` es código correcto sobre datos que no existen.
 
-La pregunta abierta ya no es si el campo llega, sino **qué otro campo trae una
-categoría usable**: `bank_transaction_code` (la categorización propia de la
-entidad) o reglas sobre la contraparte. Eso se mide en la tarea 018, con la
-misma restricción de no filtrar PII al log.
+Los dos campos nativos quedaron descartados el 2026-11-19 (corrida
+[`44495369182`](https://github.com/jfcocastellano/personal-banking/actions/runs/44495369182),
+44 movimientos de ING España y 9 de Revolut):
+
+| Campo | ING España | Revolut |
+|-------|-----------|---------|
+| `merchant_category_code` | `0/44`: la clave llega, el valor no | `0/9`: ídem |
+| `bank_transaction_code` | `44/44` poblado, pero `description` vale `Banca online` para **todos** los movimientos, y `code`/`sub_code` vienen vacíos | `9/9` poblado, sin `description`; `code` solo toma `ATM`, `CARD_PAYMENT` y `TOPUP` |
+
+Los dos campos traen algo; ninguno trae una **categoría de comercio**. ING manda la
+misma etiqueta de canal para el mes entero (44 de 44 movimientos con `Banca online`) y
+Revolut manda el tipo de operación, no lo que se compró. Conclusión: Enable Banking,
+tal como lo exponen estas dos entidades, **no ofrece la categoría**. La única vía
+automática que queda es una tabla de reglas sobre el texto del movimiento
+(`remittance_information`) o sobre la contraparte (`creditor`/`debtor`); esa decisión
+es la tarea 018 y no está tomada.
 
 Mientras no haya una categoría con valores, la categorización manual de `G:H`
 en la pestaña de gastos se mantiene tal cual: no hay base para reemplazarla.

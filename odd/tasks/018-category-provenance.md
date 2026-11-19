@@ -72,21 +72,42 @@ Acotados a 10 valores por lista, con marca explícita de truncamiento (`+K`), pa
 que la línea no crezca sin límite. Un registro cuyo `bank_transaction_code` no sea
 objeto no aborta nada: se cuenta como no poblado. Test-first.
 
-### T2 — Leer la respuesta y decidir (no hay código aquí)
+### T2 — La respuesta: los dos campos nativos traen canal, no categoría
 
-Con una corrida posterior a T1:
+Medido en la corrida [`44495369182`](https://github.com/jfcocastellano/personal-banking/actions/runs/44495369182)
+(`workflow_dispatch` sobre esta rama, 44 movimientos de ING España y 9 de Revolut):
 
-- **Si trae valores**: el vocabulario es el insumo de un mapa banco→categoría, y
-  el agrupamiento de la pestaña `Gastos` se reapunta a ese campo. Ese mapeo es una
-  tarea nueva con su propio spec.
-- **Si viene vacío**: se acaba la vía nativa. Las opciones son reglas sobre texto
-  del movimiento (con la conversación de PII que eso abre) o aceptar que la
-  categoría es manual y revertir la presentación inerte de 017.
+| Campo | ING España | Revolut |
+| --- | --- | --- |
+| `merchant_category_code` | `0/44`, clave y **sin valor** | `0/9`, ídem |
+| `bank_transaction_code` | `44/44` poblado, `btc_labels=Banca online` para todos, `btc_codes=-` (sin `code` ni `sub_code`) | `9/9` poblado, `btc_labels=-` (sin `description`), `btc_codes=ATM,CARD_PAYMENT,TOPUP` |
 
-### T3 — (condicional a T2) Reapuntar la categoría
+La forma del campo es exactamente la que documenta la API
+(`{description, code, sub_code}`) y **las tres sub-claves llegan en ambos bancos**, pero:
 
-Solo si T2 encuentra datos. Fuera de alcance por ahora: implementarlo sobre una
-hipótesis es exactamente el error que 017 cometió.
+- ING manda la misma etiqueta para **44 de 44** movimientos: `Banca online`. Discrimina
+  cero: es el canal de la operación, no el comercio.
+- Revolut no manda `description` y usa `code` como tipo de operación (`ATM`,
+  `CARD_PAYMENT`, `TOPUP`). Tampoco dice qué se compró.
+
+Los dos campos candidatos quedan agotados. **Enable Banking, tal como lo exponen estas dos
+entidades, no ofrece categoría de comercio**: ninguna combinación de los campos opcionales
+del objeto `Transaction` permite agrupar un gasto por tipo de comercio.
+
+### T3 — Decisión del owner (bloqueada, no es código)
+
+Quedan dos caminos y ninguno se escribe hasta que se elija:
+
+1. **Reglas sobre el texto del movimiento** (`remittance_information`) y/o la contraparte
+   (`creditor`/`debtor`): es la vía clásica y funcionaría, pero hay que decidir con qué
+   vocabulario, cómo se mantiene la tabla de reglas y qué pasa con el texto que sí es PII
+   (una transferencia a una persona lleva su nombre en `remittance_information`).
+2. **Aceptar que la categoría es manual** (el catálogo `G:H` que ya existe) y revertir la
+   presentación inerte de 017: la columna `Categoría` vacía y la pestaña `Gastos` reducida a
+   una fila `SIN CATEGORÍA`.
+
+Mientras la decisión no exista, `main` sigue con la presentación de 017 intacta y
+`docs/context.md` §4 deja constancia de que está vacía por falta de datos.
 
 ## Coste y cuota
 
@@ -108,6 +129,31 @@ del mismo día UTC (dos pasadas, 6 GET por cuenta, escenario ya observado el
 ## Evidencia
 
 Se anota aquí al cerrar cada tarea.
+
+### T2 — respondida en `44495369182` (2026-11-19, 09:20 UTC)
+
+La línea del sondeo, tal cual salió en producción:
+
+```text
+Connector ING España: category provenance, records=44, btc_populated=44/44,
+  btc_keys=code,description,sub_code, btc_codes=-, btc_labels=Banca online
+Connector Revolut: category provenance, records=9, btc_populated=9/9,
+  btc_keys=code,description,sub_code, btc_codes=ATM,CARD_PAYMENT,TOPUP, btc_labels=-
+```
+
+Lo que confirma cada columna:
+
+- `btc_keys=code,description,sub_code` en los dos bancos: la forma del objeto es la
+  documentada y no hay sub-claves raras.
+- `btc_codes=-` en ING: no manda códigos, solo `description`. `btc_labels=Banca online`:
+  un único valor para todo el mes.
+- `btc_labels=-` en Revolut: no manda `description`. `btc_codes=ATM,CARD_PAYMENT,TOPUP`:
+  tres tipos de operación, sin `/` porque `sub_code` viene vacío.
+- `mcc_populated=0/44` y `0/9`: la medición de 017 sigue en cero, ahora sobre 53
+  movimientos en vez de 50.
+
+Cierre del camino nativo: no es que falte medir, es que **no hay categoría que traer**.
+La única pregunta que queda abierta es de producto (T3), no de datos.
 
 ### T1 — implementada (sondeo de forma y vocabulario)
 

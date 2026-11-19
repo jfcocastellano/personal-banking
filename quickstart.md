@@ -444,12 +444,15 @@ GitHub Actions: `Actions → Layout mensual → Run workflow`.
   ISO 18245 está en la tabla (`src/banking/categories.py`), el código crudo si no está mapeado, y
   `SIN CATEGORÍA` si el banco no mandó código. La lista completa de movimientos, ahora con su
   columna `Categoría`, vive en el tab `<YYYY-MM>`.
-- **Estado real de la categoría (2026-11-19): todavía no hay datos.** El sondeo del log mide
-  `mcc_populated` en cada corrida y el resultado es `0/N` en los dos bancos activos (ING España y
-  Revolut) desde el 2026-11-12. El campo `merchant_category_code` llega como clave y vacío, así
-  que hoy la columna `Categoría` está en blanco y este bloque es una sola fila
-  `SIN CATEGORÍA` con el total del mes. La búsqueda de un campo que sí traiga valores está en
-  `odd/tasks/018-category-provenance.md`.
+- **Estado real de la categoría (2026-11-19): los bancos no la mandan.** El sondeo del log
+  mide `mcc_populated` y `bank_transaction_code` en cada corrida. `merchant_category_code`
+  llega como clave y vacío (`0/44` en ING España, `0/9` en Revolut) y
+  `bank_transaction_code`, aunque llega poblado, solo trae el canal: `Banca online` para los
+  44 movimientos de ING, y `ATM`/`CARD_PAYMENT`/`TOPUP` en Revolut. Ninguno dice qué se
+  compró, así que hoy la columna `Categoría` está en blanco y este bloque es una sola fila
+  `SIN CATEGORÍA` con el total del mes. Qué hacer con eso se decide en
+  `odd/tasks/018-category-provenance.md`; la alternativa automática es una tabla de reglas
+  sobre el texto del movimiento.
 - La primera corrida crea los tres bloques. Las siguientes limpian `B3:E403` (incluye cabeceras
   y filas viejas de la lista de movimientos, así que una pestaña creada antes de este cambio
   queda limpia) y reescriben el bloque de sumatorios `B3:C53` y el resumen con el panel de
