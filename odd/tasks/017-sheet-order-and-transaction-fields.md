@@ -1,6 +1,8 @@
 # 017 — Consistent sheet order and knowing which transaction fields the API really returns
 
-Status: in progress.
+Status: closed (2026-11-19). All slices landed; the category measurement came back
+negative in production, so the *follow-up* (which field carries a usable category) is
+tracked in `odd/tasks/018-category-provenance.md`.
 
 ## Why
 
@@ -313,6 +315,39 @@ field. One `sync.yml` run answers it at no extra PSD2 cost, because the aggregat
 rides on the fetch that already happens — and after #34 that answer decides
 label-table coverage, not whether to widen `Transaction`.
 
+### T4a — production answer (2026-11-19): the field arrives **empty**
+
+The one run this slice was waiting for happened, and so did the eight that
+followed. `gh run view <id> --log` over every scheduled run since `a00fe63`:
+
+| Run | Fecha | ING España | Revolut |
+| --- | --- | --- | --- |
+| `43238023775` | 2026-11-12 | `mcc_populated=0/29` | `0/3` |
+| `43718478631` | 2026-11-15 | `0/35` | `0/7` |
+| `44114043933` | 2026-11-17 | `0/39` | `0/9` |
+| `44330217832` | 2026-11-18 | `0/41` | `0/9` |
+
+Zero out of zero. The key is present in the `keys=` list of both banks on every
+run — all 23 fields of the object arrive as names — and the value is absent or
+empty in **every single record**. Nothing in the five tests was wrong; the banks
+do not populate the field.
+
+Consequences, both already visible in production:
+
+- The raw tab's `Categoría` column is empty for every row, so T4/S3 ships a
+  column that renders nothing.
+- The `Gastos` tab folds the whole month into one `SIN CATEGORÍA` row, so the
+  sums block T4/S4 built is a single number — a total with extra steps.
+- The success headline keeps saying «N filas en la pestaña … Gastos» where N is
+the transaction count, while the tab holds one row. This is the `rows_written`
+semantics recorded as a known risk in T4, now actively misleading rather than
+merely imprecise.
+
+T4 is not reverted here: the decision on what to do with the presentation belongs
+to the owner and depends on whether another field carries a usable category,
+which is exactly what 018 measures. The label table stays as correct-but-unused
+code until then.
+
 ## Risks carried forward
 
 - **`fetch_transactions` sits exactly at the complexity ceiling (10)** — measured at 10 before
@@ -325,3 +360,6 @@ label-table coverage, not whether to widen `Transaction`.
   becomes shareable output.
 - Pagination that raises (auth, rate limit, `PaginationIncomplete`) emits no probe line, so a
   failed fetch is silent about fields rather than misleading.
+- **Confirmed 2026-11-19:** `merchant_category_code` is populated in 0 % of records for both
+  ING España and Revolut. The category presentation from T4 is inert in production until 018
+  finds a field that actually carries values. `docs/context.md` §4 records the numbers.

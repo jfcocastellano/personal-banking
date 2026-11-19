@@ -3,12 +3,12 @@
 **Salida de Fase 0 para**: `specs/002-ing-transactions-connector/plan.md`
 **Fecha**: 2026-08-03
 
-> **Nota sobre fuentes**: `CLAUDE.md` referencia una skill `/enable-banking-api`
-> para conocimiento de dominio de Enable Banking (autenticación PSD2, ciclo de
-> vida de sesión, límites de tasa, estructura de transacciones, códigos de
-> error). Esa skill no está instalada en este repositorio en el momento de
-> escribir este documento. Las decisiones de protocolo de abajo se basan en
-> `docs/context.md` (fuente de verdad del proyecto) y en las convenciones
+> **Nota sobre fuentes**: el conocimiento de dominio de Enable Banking
+> (autenticación PSD2, ciclo de vida de sesión, límites de tasa, estructura de
+> transacciones, códigos de error) vive en `docs/context.md`, la fuente de verdad
+> del proyecto, y en la documentación oficial de Enable Banking. No hay ninguna
+> skill de dominio instalada en este repositorio. Las decisiones de protocolo de
+> abajo se basan en `docs/context.md` y en las convenciones
 > públicas conocidas de agregadores PSD2/Berlin Group. Los puntos marcados
 > **[verificar contra documentación real]** deben confirmarse contra la
 > documentación oficial de Enable Banking antes de la primera ejecución no
