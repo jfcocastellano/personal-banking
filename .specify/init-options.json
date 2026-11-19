@@ -1,9 +1,9 @@
 {
-  "ai": "claude",
-  "ai_skills": true,
+  "ai": "opencode",
+  "ai_skills": false,
   "feature_numbering": "sequential",
   "here": false,
-  "integration": "claude",
-  "script": "ps",
+  "integration": "opencode",
+  "script": "sh",
   "speckit_version": "0.10.2"
 }

@@ -189,6 +189,84 @@ def _join_remittance_information(raw_remittance: object) -> str:
     return str(raw_remittance) if raw_remittance else ""
 
 
+# How many distinct values of one vocabulary reach the log line. Bounded so the
+# line cannot grow with the number of merchants in a month.
+_MAX_PROVENANCE_VALUES = 10
+
+_BANK_TRANSACTION_CODE_PARTS = ("code", "sub_code")
+
+
+def _capped(values: set[str]) -> str:
+    """Render a vocabulary as a bounded, deterministic, self-describing string."""
+    ordered = sorted(values)
+    if not ordered:
+        return "-"
+    shown = ordered[:_MAX_PROVENANCE_VALUES]
+    remainder = len(ordered) - len(shown)
+    rendered = ",".join(shown)
+    return f"{rendered},+{remainder}" if remainder else rendered
+
+
+@dataclass
+class _BankTransactionCodeProbe:
+    """Shape and vocabulary of ``bank_transaction_code``, for one fetch.
+
+    ``merchant_category_code`` arrived empty in every production record, so this is
+    the next candidate for a category that actually carries values. Only the
+    bank's own categorisation reaches the log: ``description`` is the entity's
+    label for the kind of movement (``Kortköp``, ``Utlandsbetalning``), not the
+    merchant and not the counterparty. Amounts, dates, remittance text and
+    ``creditor``/``debtor`` names stay out.
+
+    A record whose ``bank_transaction_code`` is absent, ``null``, not an object or
+    full of empty strings counts as unpopulated and never aborts the fetch.
+    """
+
+    populated: int = 0
+    subkeys: set[str] = field(default_factory=set)
+    codes: set[str] = field(default_factory=set)
+    labels: set[str] = field(default_factory=set)
+
+    def observe(self, raw: dict[str, Any]) -> None:
+        """Fold one API transaction record into the aggregates."""
+        block = raw.get("bank_transaction_code")
+        if not isinstance(block, dict):
+            return
+        self.subkeys.update(str(key) for key in block)
+        parts = [_non_empty_text(block.get(key)) for key in _BANK_TRANSACTION_CODE_PARTS]
+        label = _non_empty_text(block.get("description"))
+        if label is not None:
+            self.labels.add(label)
+        if any(part is not None for part in parts) or label is not None:
+            self.populated += 1
+        code = "/".join(part for part in parts if part is not None)
+        if code:
+            self.codes.add(code)
+
+    def log(self, bank_name: str, record_count: int) -> None:
+        """Log one line per fetch; nothing when the fetch saw no records."""
+        if record_count == 0:
+            return
+        logger.info(
+            "Connector %s: category provenance, records=%d, btc_populated=%d/%d, "
+            "btc_keys=%s, btc_codes=%s, btc_labels=%s",
+            bank_name,
+            record_count,
+            self.populated,
+            record_count,
+            ",".join(sorted(self.subkeys)) or "-",
+            _capped(self.codes),
+            _capped(self.labels),
+        )
+
+
+def _non_empty_text(value: object) -> str | None:
+    """Return a stripped, non-empty string, or None for anything unusable."""
+    if not isinstance(value, str):
+        return None
+    return value.strip() or None
+
+
 @dataclass
 class _FieldProbe:
     """Which transaction fields a bank returned for one fetch, plus the MCC answer.
@@ -211,6 +289,9 @@ class _FieldProbe:
     field_names: set[str] = field(default_factory=set)
     mcc_populated: int = 0
     mcc_codes: set[str] = field(default_factory=set)
+    bank_transaction_code: _BankTransactionCodeProbe = field(
+        default_factory=_BankTransactionCodeProbe
+    )
 
     def observe(self, raw: dict[str, Any]) -> None:
         """Fold one API transaction record into the aggregates.
@@ -225,6 +306,7 @@ class _FieldProbe:
         if code is not None:
             self.mcc_populated += 1
             self.mcc_codes.add(code)
+        self.bank_transaction_code.observe(raw)
 
     def log(self, bank_name: str) -> None:
         """Log one line per fetch; nothing when the fetch saw no records."""
@@ -240,6 +322,7 @@ class _FieldProbe:
             self.record_count,
             ",".join(sorted(self.mcc_codes)) or "-",
         )
+        self.bank_transaction_code.log(bank_name, self.record_count)
 
 
 def _parse_transaction(raw: dict[str, Any]) -> Transaction | None:

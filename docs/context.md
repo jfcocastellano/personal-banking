@@ -2,7 +2,7 @@
 
 > **Fuente de verdad del proyecto.** Este documento debe mantenerse actualizado ante cualquier cambio de requisitos, stack o decisiones de diseño.
 >
-> Última actualización: 2026-11-18
+> Última actualización: 2026-11-19
 
 ---
 
@@ -23,7 +23,8 @@ Las secciones 1–5 describen el **contrato objetivo** del proyecto. No hay que 
 | 010 | Diagnóstico de errores de Enable Banking (cuerpo del `422`) | Implementada |
 | 011 | Verificación del layout contra el documento real | Implementada (documentación) |
 | 012 | Bloqueo de MyInvestor y Sabadell en el login documentado | Implementada (documentación) |
-| 017 | Orden de pestañas consistente y campos reales de la transacción | En curso |
+| 017 | Orden de pestañas consistente y campos reales de la transacción | Implementada (2026-11-19) |
+| 018 | Origen real de la categoría: qué campo trae valores usables | En curso |
 
 Las ocho iteraciones del roadmap están implementadas: el scheduler automático (UC1), el disparo manual vía `workflow_dispatch` (UC2) y la notificación por email ante fallo (UC3) viven ya en el repositorio. La planificación de intención vive en `docs/roadmap.md`; el trabajo posterior a IT8 no se planifica ahí sino en `odd/tasks/`, con una entrada por unidad de trabajo.
 
@@ -187,21 +188,47 @@ decide si lo manda, y puede no mandarlo nunca.
 | `note`, `reference_number`, `reference_number_schema`, `exchange_rate` | varios | Detalle accesorio. |
 | `transaction_id` | string | **Inservible como id**: la referencia dice que no identifica la transacción de forma única y que puede cambiar. |
 
-Hoy el conector normaliza solo `booking_date`,
-`transaction_amount.{amount,currency}`, `credit_debit_indicator` y
-`remittance_information`; el resto se descarta en silencio, porque
-`Transaction` no tiene dónde guardarlo.
+Hoy el conector normaliza `booking_date`,
+`transaction_amount.{amount,currency}`, `credit_debit_indicator`,
+`remittance_information` y `merchant_category_code`; el resto se descarta en
+silencio, porque `Transaction` no tiene dónde guardarlo.
 
-**La población real por banco no está verificada.** Que la API documente un
-campo no significa que ING España o Revolut lo manden. Esa es la única
-pregunta abierta y no cuesta ninguna petición PSD2 extra: el payload ya llega
-en cada corrida. Para responderla, cada `fetch_transactions` registra una
-línea `INFO` con el banco, la cantidad de registros vistos y los **nombres**
-de campo, ordenados; nunca los valores, así que no hay importes, fechas ni
-textos de `remittance_information` en el log.
+**Medición de población, cerrada el 2026-11-19: el campo llega vacío.** Que la
+API documente un campo no significa que ING España o Revolut lo manden. Cada
+`fetch_transactions` registra una línea `INFO` con el banco, los registros
+vistos, los **nombres** de campo y el agregado de la categoría
+(`mcc_populated=N/M`, `mcc_codes=…`). Deliberadamente no hay valores de
+importes, fechas, `remittance_information` ni contrapartes: el log de Actions
+no es sitio para PII.
 
-Mientras esa medición no exista, la categorización manual de `G:H` en la
-pestaña de gastos se mantiene tal cual: no hay base para reemplazarla.
+En las corridas observadas del 2026-11-12 al 2026-11-18 el resultado es
+invariable: ING España `0/29`, `0/35`, `0/39`, `0/41`; Revolut `0/3`, `0/7`,
+`0/9`, `0/9`. El nombre del campo llega siempre —los 23 campos del objeto
+aparecen como claves— pero `merchant_category_code` viene ausente o vacío en
+el **100 %** de los registros de ambos bancos. Consecuencia en la hoja: la
+columna `Categoría` de la pestaña cruda está vacía en todas las filas y la
+pestaña de gastos agrupa el mes entero bajo `SIN CATEGORÍA`. El mapa ISO 18245
+de `src/banking/categories.py` es código correcto sobre datos que no existen.
+
+Los dos campos nativos quedaron descartados el 2026-11-19 (corrida
+[`44495369182`](https://github.com/jfcocastellano/personal-banking/actions/runs/44495369182),
+44 movimientos de ING España y 9 de Revolut):
+
+| Campo | ING España | Revolut |
+|-------|-----------|---------|
+| `merchant_category_code` | `0/44`: la clave llega, el valor no | `0/9`: ídem |
+| `bank_transaction_code` | `44/44` poblado, pero `description` vale `Banca online` para **todos** los movimientos, y `code`/`sub_code` vienen vacíos | `9/9` poblado, sin `description`; `code` solo toma `ATM`, `CARD_PAYMENT` y `TOPUP` |
+
+Los dos campos traen algo; ninguno trae una **categoría de comercio**. ING manda la
+misma etiqueta de canal para el mes entero (44 de 44 movimientos con `Banca online`) y
+Revolut manda el tipo de operación, no lo que se compró. Conclusión: Enable Banking,
+tal como lo exponen estas dos entidades, **no ofrece la categoría**. La única vía
+automática que queda es una tabla de reglas sobre el texto del movimiento
+(`remittance_information`) o sobre la contraparte (`creditor`/`debtor`); esa decisión
+es la tarea 018 y no está tomada.
+
+Mientras no haya una categoría con valores, la categorización manual de `G:H`
+en la pestaña de gastos se mantiene tal cual: no hay base para reemplazarla.
 
 **Google Sheets**
 Autenticación mediante cuenta de servicio de Google Cloud (service account). El JSON de credenciales se almacena como GitHub Secret. El Sheet se comparte con el email de la cuenta de servicio. No requiere intervención humana en ninguna ejecución.
