@@ -33,7 +33,6 @@ _RAW_HEADERS: list[CellValue] = [
     "Descripción",
     "Importe",
     "Divisa",
-    "Categoría",
 ]
 
 
@@ -372,7 +371,7 @@ class _ExplodingSecretStore:
 
 
 def _row(description: str, amount: str = "10.00", bank: str = "ING España") -> list[CellValue]:
-    return ["2026-11-05", bank, description, float(Decimal(amount)), "EUR", ""]
+    return ["2026-11-05", bank, description, float(Decimal(amount)), "EUR"]
 
 
 def _expense(description: str, amount: str, bank: str) -> ExpenseRow:
@@ -381,7 +380,6 @@ def _expense(description: str, amount: str, bank: str) -> ExpenseRow:
         bank=bank,
         description=description,
         amount=Decimal(amount),
-        category="",
     )
 
 

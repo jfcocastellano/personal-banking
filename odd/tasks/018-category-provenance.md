@@ -1,6 +1,7 @@
 # 018 — De dónde sale la categoría: qué campo trae valores usables
 
-Status: in progress.
+Status: closed (2026-11-19). The measurement found no native category; the owner
+chose the revert, which is task 019.
 
 ## Por qué
 
@@ -94,9 +95,9 @@ Los dos campos candidatos quedan agotados. **Enable Banking, tal como lo exponen
 entidades, no ofrece categoría de comercio**: ninguna combinación de los campos opcionales
 del objeto `Transaction` permite agrupar un gasto por tipo de comercio.
 
-### T3 — Decisión del owner (bloqueada, no es código)
+### T3 — Decidido el 2026-11-19: revertir
 
-Quedan dos caminos y ninguno se escribe hasta que se elija:
+Los dos caminos eran:
 
 1. **Reglas sobre el texto del movimiento** (`remittance_information`) y/o la contraparte
    (`creditor`/`debtor`): es la vía clásica y funcionaría, pero hay que decidir con qué
@@ -106,8 +107,10 @@ Quedan dos caminos y ninguno se escribe hasta que se elija:
    presentación inerte de 017: la columna `Categoría` vacía y la pestaña `Gastos` reducida a
    una fila `SIN CATEGORÍA`.
 
-Mientras la decisión no exista, `main` sigue con la presentación de 017 intacta y
-`docs/context.md` §4 deja constancia de que está vacía por falta de datos.
+El owner eligió el segundo: **revertir** la columna y la suma agrupada, en vez de
+mantener una presentación inerte mientras se decide si se construye el motor de reglas.
+La reversión es la tarea 019; la tabla de reglas queda como idea viva sin spec, y la
+categorización manual de `G:H` sigue siendo la única fuente de categoría.
 
 ## Coste y cuota
 

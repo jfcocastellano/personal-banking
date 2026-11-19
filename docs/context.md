@@ -24,7 +24,8 @@ Las secciones 1–5 describen el **contrato objetivo** del proyecto. No hay que 
 | 011 | Verificación del layout contra el documento real | Implementada (documentación) |
 | 012 | Bloqueo de MyInvestor y Sabadell en el login documentado | Implementada (documentación) |
 | 017 | Orden de pestañas consistente y campos reales de la transacción | Implementada (2026-11-19) |
-| 018 | Origen real de la categoría: qué campo trae valores usables | En curso |
+| 018 | Origen real de la categoría: qué campo trae valores usables | Implementada (2026-11-19, medición) |
+| 019 | Retirar la columna y el sumatorio por categoría | Implementada (2026-11-19) |
 
 Las ocho iteraciones del roadmap están implementadas: el scheduler automático (UC1), el disparo manual vía `workflow_dispatch` (UC2) y la notificación por email ante fallo (UC3) viven ya en el repositorio. La planificación de intención vive en `docs/roadmap.md`; el trabajo posterior a IT8 no se planifica ahí sino en `odd/tasks/`, con una entrada por unidad de trabajo.
 
@@ -205,10 +206,7 @@ En las corridas observadas del 2026-11-12 al 2026-11-18 el resultado es
 invariable: ING España `0/29`, `0/35`, `0/39`, `0/41`; Revolut `0/3`, `0/7`,
 `0/9`, `0/9`. El nombre del campo llega siempre —los 23 campos del objeto
 aparecen como claves— pero `merchant_category_code` viene ausente o vacío en
-el **100 %** de los registros de ambos bancos. Consecuencia en la hoja: la
-columna `Categoría` de la pestaña cruda está vacía en todas las filas y la
-pestaña de gastos agrupa el mes entero bajo `SIN CATEGORÍA`. El mapa ISO 18245
-de `src/banking/categories.py` es código correcto sobre datos que no existen.
+el **100 %** de los registros de ambos bancos.
 
 Los dos campos nativos quedaron descartados el 2026-11-19 (corrida
 [`44495369182`](https://github.com/jfcocastellano/personal-banking/actions/runs/44495369182),
@@ -222,10 +220,21 @@ Los dos campos nativos quedaron descartados el 2026-11-19 (corrida
 Los dos campos traen algo; ninguno trae una **categoría de comercio**. ING manda la
 misma etiqueta de canal para el mes entero (44 de 44 movimientos con `Banca online`) y
 Revolut manda el tipo de operación, no lo que se compró. Conclusión: Enable Banking,
-tal como lo exponen estas dos entidades, **no ofrece la categoría**. La única vía
-automática que queda es una tabla de reglas sobre el texto del movimiento
-(`remittance_information`) o sobre la contraparte (`creditor`/`debtor`); esa decisión
-es la tarea 018 y no está tomada.
+tal como lo exponen estas dos entidades, **no ofrece la categoría**. Una nota de
+dominio: la etiqueta que la app de ING muestra («Billetes de viaje») es su capa de
+producto, alimentada por el MCC del esquema de tarjetas; PSD2 solo obliga a tres
+campos y deja el resto al banco, y la pasarela AIS de ING no publica su
+enriquecimiento.
+
+**La presentación por categoría se retiró el 2026-11-19.** Con el campo vacío, la
+columna `Categoría` de la pestaña cruda estaba en blanco en todas las filas y la
+pestaña de gastos colapsaba el mes en una única fila `SIN CATEGORÍA`: se mostraba
+una categoría que no existía. La columna, el bloque de sumatorios y
+`src/banking/categories.py` se eliminaron; la pestaña de gastos vuelve a listar los
+movimientos y a sumar con `SUMIF` sobre su columna de importes. El sondeo de
+`merchant_category_code` y `bank_transaction_code` se queda en el log, que es donde
+sirve: documenta por qué el dato no está. Las alternativas automáticas —tabla de
+reglas sobre el texto del movimiento o sobre la contraparte— quedan sin decidir.
 
 Mientras no haya una categoría con valores, la categorización manual de `G:H`
 en la pestaña de gastos se mantiene tal cual: no hay base para reemplazarla.
