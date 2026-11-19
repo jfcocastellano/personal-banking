@@ -274,7 +274,7 @@ account), see `specs/003-google-sheets-writer/quickstart.md`.
 `python -m banking sync` connects the two previous iterations end to end:
 it fetches this month's settled ING movements (day 1 through today), maps
 each one to a fixed-column row (`Fecha de liquidación, Banco, Descripción,
-Importe, Divisa, Categoría`), and overwrites the `YYYY-MM` tab of the document
+Importe, Divisa`), and overwrites the `YYYY-MM` tab of the document
 identified by the `GOOGLE_SHEET_ID` secret (reserved since IT1, now
 consumed for the first time). Running it again the same day is
 idempotent — the tab is fully rewritten, never appended to.
@@ -439,27 +439,23 @@ Si no tenés `BANKING_MASTER_KEY` en la máquina, corré el mismo comando desde
 GitHub Actions: `Actions → Layout mensual → Run workflow`.
 
 - El tab se llama `<YYYY-MM> Gastos`; el `<YYYY-MM>` que escribe el sync no cambia.
-- La pestaña ya no lista los movimientos: muestra el **sumatorio por categoría** (una fila
-  con etiqueta y total; `amount < 0` solo). La etiqueta es el nombre en español cuando el código
-  ISO 18245 está en la tabla (`src/banking/categories.py`), el código crudo si no está mapeado, y
-  `SIN CATEGORÍA` si el banco no mandó código. La lista completa de movimientos, ahora con su
-  columna `Categoría`, vive en el tab `<YYYY-MM>`.
-- **Estado real de la categoría (2026-11-19): los bancos no la mandan.** El sondeo del log
-  mide `mcc_populated` y `bank_transaction_code` en cada corrida. `merchant_category_code`
-  llega como clave y vacío (`0/44` en ING España, `0/9` en Revolut) y
-  `bank_transaction_code`, aunque llega poblado, solo trae el canal: `Banca online` para los
-  44 movimientos de ING, y `ATM`/`CARD_PAYMENT`/`TOPUP` en Revolut. Ninguno dice qué se
-  compró, así que hoy la columna `Categoría` está en blanco y este bloque es una sola fila
-  `SIN CATEGORÍA` con el total del mes. Qué hacer con eso se decide en
-  `odd/tasks/018-category-provenance.md`; la alternativa automática es una tabla de reglas
-  sobre el texto del movimiento.
-- La primera corrida crea los tres bloques. Las siguientes limpian `B3:E403` (incluye cabeceras
-  y filas viejas de la lista de movimientos, así que una pestaña creada antes de este cambio
-  queda limpia) y reescriben el bloque de sumatorios `B3:C53` y el resumen con el panel de
-  saldos (`J:K`); lo único que se respeta es lo que edites en `G:H`, que no recibe escrituras.
-- Los totales siguen siendo fórmulas: «Gastos» suma el bloque de categorías (`C4:C53`) y
-  «Ingresos» cruza al tab de movimientos (`SUMIF` sobre su columna de importes), así que un
-  importe corregido a mano en `<YYYY-MM>` se refleja solo.
+- La primera corrida crea los tres bloques. Las siguientes reescriben `B3:E403`
+  (cabecera incluida) **y** el resumen con el panel de saldos (`J:K`), que ahora se
+  refresca en cada corrida; lo único que se respeta es lo que edites en `G:H`, que no
+  recibe escrituras. La cabecera va dentro de la región a propósito: una pestaña creada
+  mientras estuvo la columna de categoría (017/T4) se corrige sola en la corrida siguiente.
+- Los totales son fórmulas (dos `SUMIF` sobre la columna de importes; el neto suma ambas
+  celdas), así que un importe corregido a mano se refleja solo.
+- El bloque de gastos comunes trae el catálogo de categorías con los importes vacíos y se llena a
+  mano. No hay etiqueta automática que ponerle a los movimientos: la medición de producción del
+  2026-11-19 muestra que `merchant_category_code` llega vacío en el 100 % de los registros de ING
+  España y Revolut (`0/44` y `0/9`), y `bank_transaction_code` solo informa el canal de la
+  operación (`Banca online` para todo ING, `ATM`/`CARD_PAYMENT`/`TOPUP` en Revolut). Por eso la
+  columna `Categoría` del tab de movimientos y el sumatorio por categoría se retiraron: no había
+  dato que mostrar. El detalle está en `odd/tasks/018-category-provenance.md` y en
+  `docs/context.md`, «Campos de transacción disponibles». Los movimientos de Sabadell llegarán a
+  la columna de gastos individuales cuando exista esa sesión PSD2; hoy el bloque central arranca
+  vacío.
 - El saldo de cada cuenta es el que informa el banco **en el momento de la
   consulta**. PSD2 no expone saldos históricos, así que el cierre real de mes
   solo coincide si la corrida cae el último día del mes. La fila `Saldos al`
@@ -487,9 +483,8 @@ de backfill de un mes concreto. Lo que cambió es quién corre todos los días.
 
 - La pasada usa los mismos cinco códigos de salida que `sync` (`0`-`4`); `layout`
   conserva su tabla propia, más corta y distinta.
-- `B3:E403` (sumatorios por categoría, incluida la limpieza de la lista de movimientos antigua)
-  y `J:K` son de la máquina y se reescriben en cada corrida, incluso lo que
-  hayas tipeado ahí; `G:H` sobrevive.
+- `B3:E403` y `J:K` son de la máquina y se reescriben en cada corrida, incluso lo
+  que hayas tipeado ahí; `G:H` sobrevive.
 - El saldo es una foto del momento de la corrida con la fecha de referencia del
   banco: no hay histórico, y el mes anterior deja de actualizarse cuando el mes
   cambia. Las dos cosas son limitaciones declaradas, no omisiones.

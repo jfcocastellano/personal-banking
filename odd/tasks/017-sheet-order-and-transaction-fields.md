@@ -181,6 +181,8 @@ record for that logger, which was true only while the connector logged once per 
 
 ### T4 — Categories as data and as presentation (owner-directed, unblocked by production evidence)
 
+> Reverted in 019 (2026-11-19). Kept as the record of the built-and-discarded attempt.
+
 The T3 probe answered the blocking question on the 2026-11-10 scheduled run
 (Actions run `42831483339`): `merchant_category_code` and `entry_reference`
 appear in the `keys=` list for both ING España (records=26) and Revolut
@@ -343,10 +345,12 @@ the transaction count, while the tab holds one row. This is the `rows_written`
 semantics recorded as a known risk in T4, now actively misleading rather than
 merely imprecise.
 
-T4 is not reverted here: the decision on what to do with the presentation belongs
-to the owner and depends on whether another field carries a usable category,
-which is exactly what 018 measures. The label table stays as correct-but-unused
-code until then.
+T4 was left in place here on purpose: the decision on the presentation belonged to
+the owner and depended on 018. That answer arrived on 2026-11-19 — no native field
+carries a category — and the owner chose to revert, which is task 019: the
+`Categoría` column, the category sums block and `src/banking/categories.py` were
+removed, and the `Gastos` tab lists movements again. The sections above stay as
+the record of what was built and why it did not survive.
 
 ## Risks carried forward
 
@@ -361,5 +365,6 @@ code until then.
 - Pagination that raises (auth, rate limit, `PaginationIncomplete`) emits no probe line, so a
   failed fetch is silent about fields rather than misleading.
 - **Confirmed 2026-11-19:** `merchant_category_code` is populated in 0 % of records for both
-  ING España and Revolut. The category presentation from T4 is inert in production until 018
-  finds a field that actually carries values. `docs/context.md` §4 records the numbers.
+  ING España and Revolut, and `bank_transaction_code` only carries the operation channel. T4's
+  presentation was retired in 019 rather than left inert. `docs/context.md` §4 records the
+  numbers.

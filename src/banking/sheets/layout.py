@@ -1,14 +1,14 @@
 """Monthly layout tab: a pure cell-grid builder plus a region-preserving writer.
 
-The grid reproduces the reference accounting worksheet: the category-sums block
-on the left (B..C), the shared-expense catalogue in the middle (G..H) and the
+The grid reproduces the reference accounting worksheet: individual expenses on
+the left (B..E), the shared-expense catalogue in the middle (G..H) and the
 income/summary/balances panel on the right (J..K). Column A stays empty as a
 spacer.
 
 ``build_month_grid`` is a pure function of plain data, so the geometry is
 testable without a network or a spreadsheet. ``LayoutWriter`` owns every
 Google Sheets concern: it creates the tab once and afterwards rewrites only
-the category-sums block and the summary/balances panel, which is what lets
+the expense block and the summary/balances panel, which is what lets
 hand-typed shared amounts survive a regeneration (FR-009).
 """
 
@@ -22,7 +22,6 @@ from typing import Protocol
 
 import gspread
 
-from banking.categories import category_cell
 from banking.connectors.enable_banking import Balance, Transaction
 from banking.sheets.writer import (
     CellValue,
@@ -93,9 +92,7 @@ CATEGORIES: tuple[str, ...] = (
     "*Otros",
 )
 
-# Category-sums block ceiling: one row per distinct category (50 data rows,
-# sheet rows 4..53). Exceeding it fails loudly instead of truncating silently.
-MAX_CATEGORY_ROWS = 50
+MAX_EXPENSE_ROWS = 400
 
 # Grid invariant, relied on by the writer and by anything reading this module's
 # geometry: the builder returns rows starting at sheet row 1, so ``grid[i]`` is
@@ -116,6 +113,9 @@ _COL_K = 10
 
 _TITLE_ROW = 2
 _HEADER_ROW = 3
+_EXPENSE_HEADERS: tuple[str, ...] = ("FECHA", "BANCO", "DESCRIPCIÓN", "IMPORTE")
+_EXPENSE_FIRST_ROW = 4
+_EXPENSE_LAST_ROW = _EXPENSE_FIRST_ROW + MAX_EXPENSE_ROWS - 1  # 403
 
 # Catalogue length is the single source of truth for every offset below.
 _CATEGORY_FIRST_ROW = 4
@@ -136,9 +136,6 @@ def _summary_panel_last_row(balance_count: int) -> int:
     return _BALANCE_FIRST_ROW + balance_count + 1
 
 
-_CATEGORY_SUM_FIRST_ROW = 4
-_CATEGORY_SUM_LAST_ROW = _CATEGORY_SUM_FIRST_ROW + MAX_CATEGORY_ROWS - 1  # 53
-
 # Panel height the update path clears. Deliberately larger than the four
 # connectors, so a panel that shrank (an account removed, a bank offline)
 # leaves no stale row behind.
@@ -155,26 +152,15 @@ def _summary_panel_range_last_row(balance_count: int) -> int:
     return max(_summary_panel_last_row(balance_count), _SUMMARY_PANEL_LAST_ROW)
 
 
-_SPEND_FORMULA = f"=SUM(C{_CATEGORY_SUM_FIRST_ROW}:C{_CATEGORY_SUM_LAST_ROW})"  # 50 negative sums
-
-# The movements tab the income formula reads: column E holds the signed Importe
-# of every raw movement, down to a fixed deep row so late arrivals are included.
-_MOVEMENTS_FIRST_ROW = 4
-_MOVEMENTS_LAST_ROW = 10000
-
-
-def _income_formula(movements_tab: str) -> str:
-    """The cross-tab ``SUMIF`` over the movements tab's Importe column E."""
-    amount_range = f"'{movements_tab}'!$E${_MOVEMENTS_FIRST_ROW}:$E${_MOVEMENTS_LAST_ROW}"
-    return f'=SUMIF({amount_range},">0",{amount_range})'
-
-
+# Region the update path clears and rewrites: the header row plus the block. The
+# header is inside on purpose — a tab created while 017/T4 was live carries
+# `CATEGORÍA`/`TOTAL` on row 3, and rewriting the header heals it instead of
+# leaving stale labels above the movement list until the month is recreated.
+_EXPENSE_REGION = f"B{_HEADER_ROW}:E{_EXPENSE_LAST_ROW}"
+_AMOUNT_RANGE = f"$E${_EXPENSE_FIRST_ROW}:$E${_EXPENSE_LAST_ROW}"
+_INCOME_FORMULA = f'=SUMIF({_AMOUNT_RANGE},">0",{_AMOUNT_RANGE})'
+_SPEND_FORMULA = f'=SUMIF({_AMOUNT_RANGE},"<0",{_AMOUNT_RANGE})'
 _SHARED_TOTAL_FORMULA = f"=SUM(H{_CATEGORY_FIRST_ROW}:H{_CATEGORY_LAST_ROW})"
-
-# Legacy region the refresh clears: the old four-column expense block's headers
-# and rows (sheet rows 3..403), so pre-T4 tabs are cleaned on the first run
-# against this code.
-_LEGACY_EXPENSE_REGION = "B3:E403"
 
 _TITLE_RANGES: tuple[str, ...] = (
     f"B{_TITLE_ROW}:E{_TITLE_ROW}",
@@ -192,35 +178,14 @@ _BOLD = {"textFormat": {"bold": True}}
 _MONEY_FORMAT = {"numberFormat": {"type": "NUMBER", "pattern": '#,##0.00 "€"'}}
 
 
-_SIN_CATEGORIA = "SIN CATEGORÍA"
-
-_CATEGORY_HEADER = "CATEGORÍA"
-_TOTAL_HEADER = "TOTAL GASTOS"
-
-
 @dataclass(frozen=True)
 class ExpenseRow:
-    """One transaction carried into the layout, with its resolved category.
-
-    ``category`` is the display cell ``category_cell`` produced: a Spanish
-    label when the code is mapped, the raw code otherwise, or an empty string
-    when the bank sent no code. The sums block groups empty cells under
-    ``SIN CATEGORÍA`` so the totals still add up.
-    """
+    """One individual expense, as it appears in the left-hand block."""
 
     booking_date: date
     bank: str
     description: str
     amount: Decimal
-    category: str = ""
-
-
-@dataclass(frozen=True)
-class CategoryTotal:
-    """One category's expense total, as one sums-block row."""
-
-    category: str
-    total: Decimal
 
 
 @dataclass(frozen=True)
@@ -258,15 +223,14 @@ class BankSource(Protocol):
 
 
 def expense_rows_from_banks(banks: Sequence[BankSource]) -> list[ExpenseRow]:
-    """Every transaction of every bank, with its resolved category cell.
+    """The individual-expenses block: every transaction of every bank.
 
     Args:
         banks: The per-bank results, in the desired output order.
 
     Returns:
         One `ExpenseRow` per transaction, in bank order and then in the order
-        each bank reported its transactions. ``category`` is filled through
-        ``banking.categories.category_cell``: mapped label, raw code, or empty.
+        each bank reported its transactions.
     """
     return [
         ExpenseRow(
@@ -274,7 +238,6 @@ def expense_rows_from_banks(banks: Sequence[BankSource]) -> list[ExpenseRow]:
             bank=bank.bank_name,
             description=transaction.description,
             amount=transaction.amount,
-            category=category_cell(transaction.merchant_category_code),
         )
         for bank in banks
         for transaction in bank.transactions
@@ -316,36 +279,23 @@ def layout_tab_name(month_start: date) -> str:
     return f"{month_start.strftime('%Y-%m')}{_LAYOUT_TAB_SUFFIX}"
 
 
-def expense_category_totals(rows: Sequence[ExpenseRow]) -> list[CategoryTotal]:
-    """Group the expense rows by category and sum their signed amounts.
-
-    Only expenses (``amount < 0``) are grouped: incomes never inflate the
-    sums block. Rows without a category code share the ``SIN CATEGORÍA``
-    group so the totals still add up. The result is deterministic: totals
-    ascending (most negative first), then category ascending.
-    """
-    totals: dict[str, Decimal] = {}
-    for row in rows:
-        if row.amount >= Decimal("0"):
-            continue
-        label = row.category if row.category else _SIN_CATEGORIA
-        totals[label] = totals.get(label, Decimal("0")) + row.amount
+def _expense_row(transaction: ExpenseRow) -> list[CellValue]:
+    """The four expense columns, in the order FR-003 requires (no currency)."""
     return [
-        CategoryTotal(category=label, total=total)
-        for label, total in sorted(totals.items(), key=lambda item: (item[1], item[0]))
+        transaction.booking_date.isoformat(),
+        transaction.bank,
+        transaction.description,
+        float(transaction.amount),
     ]
 
 
-def movements_tab_name(layout_tab: str) -> str:
-    """The movements tab a layout tab belongs to.
+def _sort_key(transaction: ExpenseRow) -> tuple[date, str, str]:
+    return (transaction.booking_date, transaction.bank, transaction.description)
 
-    ``layout_tab_name`` composes ``<YYYY-MM> Gastos`` and ``banking.daily``
-    composes ``<YYYY-MM>``; the pairing is suffix-based, so an already-plain
-    tab name falls back to itself.
-    """
-    if layout_tab.endswith(_LAYOUT_TAB_SUFFIX):
-        return layout_tab[: -len(_LAYOUT_TAB_SUFFIX)]
-    return layout_tab
+
+def _expense_rows(transactions: Sequence[ExpenseRow]) -> list[list[CellValue]]:
+    """Sorted, deterministic expense rows: date, then bank, then description."""
+    return [_expense_row(transaction) for transaction in sorted(transactions, key=_sort_key)]
 
 
 def _reference_label(balances: Sequence[AccountBalance]) -> str:
@@ -366,25 +316,20 @@ def _materialize(cells: dict[int, list[CellValue]], last_row: int) -> list[list[
 def build_month_grid(
     transactions: Sequence[ExpenseRow],
     balances: Sequence[AccountBalance],
-    movements_tab_name: str,
 ) -> list[list[CellValue]]:
     """Return the whole layout grid, row 0 being sheet row 1 and column 0 column A.
-
-    ``movements_tab_name`` is the raw tab the income formula reads its Importe
-    column from.
 
     Formulas are plain strings starting with ``=``, exactly as Google Sheets
     expects them; the writer is what asks Sheets to interpret them.
 
     Raises:
-        ValueError: when the month has more than ``MAX_CATEGORY_ROWS``
-            distinct category totals. The block is never truncated silently.
+        ValueError: when the month has more than ``MAX_EXPENSE_ROWS``
+            transactions. The block is never truncated silently.
     """
-    totals = expense_category_totals(transactions)
-    if len(totals) > MAX_CATEGORY_ROWS:
+    if len(transactions) > MAX_EXPENSE_ROWS:
         raise ValueError(
-            f"The category sums block holds at most {MAX_CATEGORY_ROWS} categories per month, "
-            f"got {len(totals)}. Narrow the month or raise the ceiling."
+            f"The expense block holds at most {MAX_EXPENSE_ROWS} transactions per month, "
+            f"got {len(transactions)}. Narrow the month or raise the ceiling."
         )
 
     cells: dict[int, list[CellValue]] = {}
@@ -396,9 +341,9 @@ def build_month_grid(
         line[column] = value
 
     _place_titles_and_headers(place)
-    _place_category_totals(place, totals)
+    _place_expenses(place, transactions)
     _place_shared_expenses(place)
-    _place_summary(place, movements_tab_name)
+    _place_summary(place)
     _place_balances(place, balances)
 
     return _materialize(cells, max(max(cells), _CATEGORY_TOTAL_ROW))
@@ -410,9 +355,10 @@ def _place_titles_and_headers(place: Place) -> None:
     place(_TITLE_ROW, _COL_G, "GASTOS COMUNES")
     place(_TITLE_ROW, _COL_J, "INGRESOS")
 
+    for offset, header in enumerate(_EXPENSE_HEADERS):
+        place(_HEADER_ROW, _COL_B + offset, header)
+
     for column, header in (
-        (_COL_B, _CATEGORY_HEADER),
-        (_COL_C, _TOTAL_HEADER),
         (_COL_G, "CATEGORÍA"),
         (_COL_H, "TOTAL"),
         (_COL_J, "CONCEPTO"),
@@ -421,11 +367,10 @@ def _place_titles_and_headers(place: Place) -> None:
         place(_HEADER_ROW, column, header)
 
 
-def _place_category_totals(place: Place, totals: Sequence[CategoryTotal]) -> None:
-    """One row per category: label in B, signed total in C, most negative first."""
-    for offset, total in enumerate(totals):
-        place(_CATEGORY_SUM_FIRST_ROW + offset, _COL_B, total.category)
-        place(_CATEGORY_SUM_FIRST_ROW + offset, _COL_C, float(total.total))
+def _place_expenses(place: Place, transactions: Sequence[ExpenseRow]) -> None:
+    for offset, values in enumerate(_expense_rows(transactions)):
+        for column_offset, value in enumerate(values):
+            place(_EXPENSE_FIRST_ROW + offset, _COL_B + column_offset, value)
 
 
 def _place_shared_expenses(place: Place) -> None:
@@ -436,14 +381,10 @@ def _place_shared_expenses(place: Place) -> None:
     place(_CATEGORY_TOTAL_ROW, _COL_H, _SHARED_TOTAL_FORMULA)
 
 
-def _place_summary(place: Place, movements_tab_name: str) -> None:
-    """Formulas over the sums block and the movements tab; signed amounts kept.
-
-    Every sums-block row is a negative total, so ``Gastos`` is a plain ``SUM``
-    over the block; ``Ingresos`` reads the movements tab's Importe column.
-    """
+def _place_summary(place: Place) -> None:
+    """Formulas over the expense amount column; signed amounts are kept as-is."""
     place(_SUMMARY_FIRST_ROW, _COL_J, "Ingresos")
-    place(_SUMMARY_FIRST_ROW, _COL_K, _income_formula(movements_tab_name))
+    place(_SUMMARY_FIRST_ROW, _COL_K, _INCOME_FORMULA)
     place(_SUMMARY_EXPENSE_ROW, _COL_J, "Gastos")
     place(_SUMMARY_EXPENSE_ROW, _COL_K, _SPEND_FORMULA)
     place(_SUMMARY_TOTAL_ROW, _COL_J, "Total")
@@ -499,36 +440,32 @@ def _write_grid(worksheet: gspread.Worksheet, grid: list[list[CellValue]]) -> No
         raise _translate_api_error(exc) from exc
 
 
-def _write_category_region(worksheet: gspread.Worksheet, totals: Sequence[CategoryTotal]) -> None:
-    """Clear and rewrite the sums block, headers included, from B3.
+def _write_expense_region(worksheet: gspread.Worksheet, transactions: Sequence[ExpenseRow]) -> None:
+    """Clear and rewrite only B3:E403; every other cell keeps its value.
 
-    The clear reaches the legacy ``B3:E403`` region — the old four-column
-    expense headers and rows — so pre-T4 tabs are cleaned instead of keeping
-    ghost movements next to the new block. The write (headers plus one row per
-    category) is always RAW, on the creation path too: categories and totals
-    are data, never formulas, and the block must end up in the same cell form
-    whether this is the first run or the tenth.
+    The header row travels with the block, so a tab left in an older shape (the
+    category layout of 017/T4) is corrected by the next run instead of keeping
+    labels that no longer describe the columns.
+
+    Always written with the default RAW input option, on the creation path too:
+    bank descriptions are data, never formulas, and the expense block must end
+    up in the same cell form whether this is the first run or the tenth.
     """
-    values: list[list[CellValue]] = [[_CATEGORY_HEADER, _TOTAL_HEADER]]
-    values.extend([total.category, float(total.total)] for total in totals)
+    rows: list[list[CellValue]] = [[*_EXPENSE_HEADERS], *_expense_rows(transactions)]
     try:
-        worksheet.batch_clear([_LEGACY_EXPENSE_REGION])
-        worksheet.update(values=values, range_name=f"B{_HEADER_ROW}")
+        worksheet.batch_clear([_EXPENSE_REGION])
+        worksheet.update(values=rows, range_name=f"B{_HEADER_ROW}")
     except gspread.exceptions.APIError as exc:
         raise _translate_api_error(exc) from exc
 
 
-def _write_summary_region(
-    worksheet: gspread.Worksheet,
-    balances: Sequence[AccountBalance],
-    movements_tab_name: str,
-) -> None:
+def _write_summary_region(worksheet: gspread.Worksheet, balances: Sequence[AccountBalance]) -> None:
     """Clear and rewrite only J:K, from the summary down to the reference date.
 
     The same placement helpers as ``build_month_grid`` fill the region, so the
     creation path and the daily refresh cannot drift apart. Columns A-I are
-    never addressed, which is what keeps ``G:H`` (hand-typed shared amounts)
-    and ``B:C`` (category sums) intact.
+    never addressed, which is what keeps ``G:H`` (hand-typed shared amounts) and
+    ``B:E`` (expenses) intact.
 
     The write is USER_ENTERED because the summary cells are formulas and must
     evaluate. The clear always reaches ``_SUMMARY_PANEL_LAST_ROW`` even when the
@@ -545,7 +482,7 @@ def _write_summary_region(
             line.append(None)
         line[column] = value
 
-    _place_summary(place, movements_tab_name)
+    _place_summary(place)
     _place_balances(place, balances)
 
     grid: list[list[CellValue]] = []
@@ -585,7 +522,7 @@ def _apply_light_formatting(worksheet: gspread.Worksheet, balance_count: int) ->
         worksheet.format(f"B{_TITLE_ROW}:K{_TITLE_ROW}", _BOLD)
         worksheet.format(f"B{_HEADER_ROW}:K{_HEADER_ROW}", _BOLD)
         worksheet.format(
-            f"C{_CATEGORY_SUM_FIRST_ROW}:C{_CATEGORY_SUM_LAST_ROW}",
+            f"E{_EXPENSE_FIRST_ROW}:E{_EXPENSE_LAST_ROW}",
             _MONEY_FORMAT,
         )
         worksheet.format(
@@ -604,11 +541,11 @@ class LayoutWriter:
     """Owns the ``<YYYY-MM> Gastos`` tab.
 
     The tab is created once with the full grid. Every later run clears and
-    rewrites the sums block (after clearing the legacy ``B3:E403`` region, so
-    pre-T4 tabs are cleaned) and the ``J:K`` summary/balances panel (so the
-    balances stay a fresh snapshot with the bank's reference date), and nothing
-    else. The shared-expense block ``G:H`` is therefore never touched again,
-    which is what keeps hand-typed amounts safe (FR-009).
+    rewrites ``B3:E403`` (header included) and the ``J:K`` summary/balances panel
+    (so the balances stay a fresh snapshot with the bank's reference date), and
+    nothing else. The
+    shared-expense block ``G:H`` is therefore never touched again, which is what
+    keeps hand-typed amounts safe (FR-009).
     """
 
     def __init__(self, client: gspread.Client | None = None) -> None:
@@ -621,41 +558,36 @@ class LayoutWriter:
         transactions: Sequence[ExpenseRow],
         balances: Sequence[AccountBalance],
     ) -> None:
-        """Create the layout tab, or rewrite its sums block if it exists.
-
-        The movements tab name (the raw tab the income formula reads) is
-        derived from ``tab_name`` itself, so callers never pass it twice.
+        """Create the layout tab, or rewrite its expense block if it exists.
 
         Raises:
-            ValueError: more category totals than the block holds; raised
-                before the document is touched.
+            ValueError: more transactions than the block holds; raised before
+                the document is touched.
             SheetsConfigError: invalid/missing service account credentials.
             SheetsAccessError: document or tab inaccessible.
             SheetsQuotaExceededError: Google Sheets API quota exceeded.
             SheetsAPIError: any other unexpected API error.
         """
         start = time.monotonic()
-        movements_tab = movements_tab_name(tab_name)
         # Pure and validating: a too-large month fails before any API call.
-        grid = build_month_grid(transactions, balances, movements_tab)
-        totals = expense_category_totals(transactions)
+        grid = build_month_grid(transactions, balances)
 
         try:
             client = self._client or _build_client()
             spreadsheet = _open_spreadsheet(client, document_id)
             worksheet, created = _resolve_layout_worksheet(
-                spreadsheet, tab_name, rows=max(len(grid), _CATEGORY_SUM_LAST_ROW)
+                spreadsheet, tab_name, rows=max(len(grid), _EXPENSE_LAST_ROW)
             )
             if created:
                 _write_grid(worksheet, grid)
-                # USER_ENTERED above evaluates every formula in the grid; rewrite
-                # the sums block RAW so both paths leave B3:C in the same form.
-                _write_category_region(worksheet, totals)
+                # USER_ENTERED above turns ISO dates into date values; rewrite the
+                # expense block RAW so both paths leave B4:E403 in the same form.
+                _write_expense_region(worksheet, transactions)
                 _merge_titles(worksheet)
                 _apply_light_formatting(worksheet, balance_count=len(balances))
             else:
-                _write_category_region(worksheet, totals)
-                _write_summary_region(worksheet, balances, movements_tab)
+                _write_expense_region(worksheet, transactions)
+                _write_summary_region(worksheet, balances)
         except (
             SheetsConfigError,
             SheetsAccessError,
