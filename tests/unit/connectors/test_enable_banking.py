@@ -267,12 +267,131 @@ def test_success_logs_structured_record(
 
 
 def _field_probe_lines(caplog) -> list[str]:
-    """Only the field-name probe lines, so value assertions cannot hit other logs."""
+    """Only the field-name probe lines, so value assertions cannot hit other logs.
+
+    Matched on the whole prefix rather than on ``keys=``: the category-provenance
+    line carries ``btc_keys=``, which a substring match would sweep in.
+    """
     return [
         record.getMessage()
         for record in caplog.records
-        if record.levelno == logging.INFO and "keys=" in record.getMessage()
+        if record.levelno == logging.INFO and "transaction fields, records=" in record.getMessage()
     ]
+
+
+def _category_provenance_lines(caplog) -> list[str]:
+    """Only the ``bank_transaction_code`` provenance lines."""
+    return [
+        record.getMessage()
+        for record in caplog.records
+        if record.levelno == logging.INFO and "category provenance" in record.getMessage()
+    ]
+
+
+def test_fetch_reports_the_bank_transaction_code_vocabulary(
+    caplog, eb_config_dir, fake_session_id_in_store, mock_http_client
+):
+    record = _raw_tx(description="NOMINA CONFIDENCIAL SL")
+    record["bank_transaction_code"] = {
+        "description": "Kortköp",
+        "code": "12",
+        "sub_code": "32",
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"transactions": [record], "continuation_key": None})
+
+    connector = _FakeConnector(http_client=mock_http_client(handler))
+    with caplog.at_level(logging.INFO, logger="banking.connectors.enable_banking"):
+        connector.fetch_transactions(date(2026, 8, 1), date(2026, 8, 31))
+
+    lines = _category_provenance_lines(caplog)
+    assert len(lines) == 1
+    line = lines[0]
+    assert "Fake Bank" in line
+    assert "records=1" in line
+    assert "btc_populated=1/1" in line, line
+    assert "btc_keys=code,description,sub_code" in line, line
+    assert "btc_codes=12/32" in line, line
+    assert "btc_labels=Kortköp" in line, line
+    # The PII boundary this probe exists to respect: the remittance text, the
+    # amount and the date never reach the category line.
+    for value in ("NOMINA CONFIDENCIAL SL", "42.50", "2026-08-15"):
+        assert value not in line, f"leaked {value}: {line}"
+
+
+@pytest.mark.parametrize(
+    "block",
+    [
+        None,
+        {"description": None, "code": "", "sub_code": "  "},
+        {},
+        "Kortköp",
+        ["12", "32"],
+    ],
+    ids=["absent", "nulls", "empty-object", "not-an-object", "list"],
+)
+def test_fetch_treats_an_unusable_bank_transaction_code_as_unpopulated(
+    caplog, eb_config_dir, fake_session_id_in_store, mock_http_client, block
+):
+    record = _raw_tx()
+    if block is not None:
+        record["bank_transaction_code"] = block
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"transactions": [record], "continuation_key": None})
+
+    connector = _FakeConnector(http_client=mock_http_client(handler))
+    with caplog.at_level(logging.INFO, logger="banking.connectors.enable_banking"):
+        result = connector.fetch_transactions(date(2026, 8, 1), date(2026, 8, 31))
+
+    assert len(result) == 1  # the movement always survives the probe
+    lines = _category_provenance_lines(caplog)
+    assert len(lines) == 1
+    assert "btc_populated=0/1" in lines[0], lines[0]
+    assert "btc_labels=-" in lines[0], lines[0]
+
+
+def test_fetch_caps_the_category_vocabulary_and_signals_truncation(
+    caplog, eb_config_dir, fake_session_id_in_store, mock_http_client
+):
+    records = []
+    for index in range(12):
+        record = _raw_tx(description=f"Tx {index}")
+        record["bank_transaction_code"] = {
+            "description": f"Label {index:02d}",
+            "code": str(index),
+            "sub_code": "00",
+        }
+        records.append(record)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"transactions": records, "continuation_key": None})
+
+    connector = _FakeConnector(http_client=mock_http_client(handler))
+    with caplog.at_level(logging.INFO, logger="banking.connectors.enable_banking"):
+        connector.fetch_transactions(date(2026, 8, 1), date(2026, 8, 31))
+
+    lines = _category_provenance_lines(caplog)
+    assert len(lines) == 1
+    line = lines[0]
+    assert "btc_populated=12/12" in line, line
+    assert "Label 09" in line, line  # tenth of ten, sorted
+    assert "Label 10" not in line, f"the vocabulary must stop at ten values: {line}"
+    assert "+2" in line, f"truncation must be visible: {line}"
+
+
+def test_fetch_logs_no_category_provenance_when_the_account_returns_no_records(
+    caplog, eb_config_dir, fake_session_id_in_store, mock_http_client
+):
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"transactions": [], "continuation_key": None})
+
+    connector = _FakeConnector(http_client=mock_http_client(handler))
+    with caplog.at_level(logging.INFO, logger="banking.connectors.enable_banking"):
+        connector.fetch_transactions(date(2026, 8, 1), date(2026, 8, 31))
+
+    assert _category_provenance_lines(caplog) == []
 
 
 def test_fetch_logs_the_field_names_each_record_carries(
