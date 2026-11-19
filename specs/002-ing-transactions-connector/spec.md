@@ -4,7 +4,7 @@
 
 **Creado**: 2026-08-03
 
-**Estado**: Borrador
+**Estado**: Implementada
 
 **Entrada**: Descripción del usuario: "Implementa un conector que se autentique con la API de Enable Banking
 (agregador PSD2 europeo) y recupere los movimientos de una cuenta ING España para un rango de fechas.

@@ -4,7 +4,7 @@
 
 **Creado**: 2026-10-17
 
-**Estado**: Borrador
+**Estado**: Implementada
 
 **Entrada**: Descripción del usuario: "Configura el proceso de sincronización bancaria para que se ejecute
 automáticamente cada día mediante GitHub Actions, y pueda dispararse también manualmente desde la interfaz de

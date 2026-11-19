@@ -4,7 +4,7 @@
 
 **Created**: 2026-11-04
 
-**Status**: Draft (pendiente de aprobación)
+**Status**: Implemented
 
 **Input**: "La pestaña `2026-11 Gastos` no se va actualizando con los movimientos diarios; la de `2026-11` sí."
 

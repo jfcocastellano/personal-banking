@@ -4,7 +4,7 @@
 
 **Creado**: 2026-08-09
 
-**Estado**: Borrador
+**Estado**: Implementada
 
 **Entrada**: Descripción del usuario: "Implementa un componente que autentique con la API de Google Sheets
 mediante una cuenta de servicio de Google Cloud y escriba datos tabulares en una pestaña de un documento.

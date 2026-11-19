@@ -1,7 +1,7 @@
 # Feature Specification: Monthly accounting sheet layout
 
 **Feature branch**: `008-monthly-sheet-layout`
-**Status**: Draft
+**Status**: Implemented
 **Input**: Reproduce the manual Excel accounting sheet (three blocks: individual expenses, shared expenses, income/summary/balances) inside the Google Sheet this project already writes, filling the parts that can be derived from bank transactions.
 
 ## Problem
