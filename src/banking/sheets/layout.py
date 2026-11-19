@@ -581,7 +581,7 @@ class LayoutWriter:
             if created:
                 _write_grid(worksheet, grid)
                 # USER_ENTERED above turns ISO dates into date values; rewrite the
-                # expense block RAW so both paths leave B4:E403 in the same form.
+                # expense block RAW so both paths leave B3:E403 in the same form.
                 _write_expense_region(worksheet, transactions)
                 _merge_titles(worksheet)
                 _apply_light_formatting(worksheet, balance_count=len(balances))
