@@ -4,7 +4,7 @@
 
 **Creado**: 2026-10-16
 
-**Estado**: Borrador
+**Estado**: Implementada
 
 **Entrada**: Descripción del usuario: "Implementa un mecanismo de notificación por email que informe al
 propietario cuando el proceso de sincronización bancaria encuentra algún error. El comportamiento esperado:

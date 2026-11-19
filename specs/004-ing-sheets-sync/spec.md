@@ -4,7 +4,7 @@
 
 **Creado**: 2026-08-09
 
-**Estado**: Borrador
+**Estado**: Implementada
 
 **Entrada**: Descripción del usuario: "Implementa el proceso principal de sincronización que conecta el
 conector de Enable Banking (ING) con el writer de Google Sheets. El proceso debe: ser invocable desde

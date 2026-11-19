@@ -4,7 +4,7 @@
 
 **Creado**: 2026-08-13
 
-**Estado**: Borrador
+**Estado**: Implementada
 
 **Entrada**: Descripción del usuario: "Extiende el pipeline de sincronización para soportar cuatro entidades
 bancarias de forma resiliente: ING, Revolut, MyInvestor y Banco Sabadell, todas via Enable Banking como

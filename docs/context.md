@@ -31,7 +31,7 @@ Las ocho iteraciones del roadmap están implementadas: el scheduler automático 
 
 IT8 se construyó en dos unidades que el roadmap registra juntas: la pestaña de layout (`specs/008-monthly-sheet-layout/`) y la pasada diaria única que escribe ambas pestañas con un solo recorrido (`specs/016-single-daily-pass/`). Desde entonces el scheduler ejecuta `banking daily`, no `sync`.
 
-**Deuda conocida de documentación**: las cabeceras de `specs/002`-`specs/008` y `specs/016` siguen rotuladas «Borrador» / «Draft» aunque su trabajo está implementado y fusionado (`specs/001` sí dice «Implemented»; `specs/010` no tiene cabecera porque solo tiene `tasks.md`). El estado real es el de esta tabla. Cualquier lectura de esas cabeceras como estado del proyecto es incorrecta.
+Las cabeceras de las specs y esta tabla ya no se contradicen: desde el 2026-11-19 todas las de `specs/002`-`specs/016` dicen «Implementada» / «Implemented», que es el estado real de un trabajo fusionado (`specs/010` sigue sin cabecera porque solo tiene `tasks.md`). El resumen de qué está construido sigue siendo esta tabla, no las specs: cada spec describe el contrato de su iteración, no el estado actual del sistema.
 
 **Observabilidad**
 Implementada en `src/banking/logging_config.py`. El entry point de la CLI instala sobre el logger raíz el formato exigido por la constitución (`%(asctime)s %(levelname)s %(name)s: %(message)s`) y resuelve el nivel desde la variable de entorno `LOG_LEVEL` (por defecto `INFO`; un valor no reconocido cae a `INFO`, para que un error de tipeo no aborte una sincronización). Importar `banking` nunca reconfigura el logging de la aplicación anfitriona.
