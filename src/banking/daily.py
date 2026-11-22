@@ -30,20 +30,18 @@ from banking.sheets.layout import (
     expense_rows_from_banks,
     layout_tab_name,
 )
-from banking.sheets.writer import SheetsWriter
 from banking.sync import (
     _CONNECTOR_CLASSES,
-    _HEADERS,
     _SHEET_ID_KEY,
     NoConnectorsError,
     OverallStatus,
-    transaction_rows_for_banks,
 )
 
 logger = logging.getLogger(__name__)
 
-#: Which of the two writes failed when the daily pass could not reach Sheets.
-WriteStage = Literal["raw", "layout"]
+#: Which write failed when the daily pass could not reach Sheets. One tab is
+#: written since task 021, so the stage is kept only as the failure's own label.
+WriteStage = Literal["layout"]
 
 
 @dataclass(frozen=True)
@@ -73,17 +71,15 @@ class BankPass:
 class DailySummary:
     """The aggregate outcome of one daily pass across every bank.
 
-    ``total_rows_written`` counts the rows handed to the raw tab, and
-    ``expense_count``/``balance_count`` the rows handed to the layout tab, so a
-    reader can check that both tabs carry the same movement set.
+    Since task 021 the pass writes a single tab, so there is one tab name and one
+    row count: ``total_rows_written`` is the number of movement rows it holds and
+    nothing else is written beside it.
     """
 
     passes: list[BankPass]
     overall_status: OverallStatus
-    raw_tab_name: str
-    layout_tab_name: str
+    tab_name: str
     total_rows_written: int
-    expense_count: int
     balance_count: int
     duration_seconds: float
 
@@ -98,8 +94,7 @@ class NoBankFetchedError(Exception):
     Attributes:
         passes: The per-bank results of the failed run, or ``None`` when the
             raiser did not provide context.
-        raw_tab_name: The raw tab that was not written, or ``None``.
-        layout_tab_name: The layout tab that was not written, or ``None``.
+        tab_name: The month tab that was not written, or ``None``.
     """
 
     def __init__(
@@ -107,23 +102,21 @@ class NoBankFetchedError(Exception):
         message: str,
         *,
         passes: list[BankPass] | None = None,
-        raw_tab_name: str | None = None,
-        layout_tab_name: str | None = None,
+        tab_name: str | None = None,
     ) -> None:
         super().__init__(message)
         self.passes = passes
-        self.raw_tab_name = raw_tab_name
-        self.layout_tab_name = layout_tab_name
+        self.tab_name = tab_name
 
 
 class DailySheetsError(Exception):
-    """Raised when writing one of the two tabs fails; wraps the writer error.
+    """Raised when writing the month tab fails; wraps the writer error.
 
     Attributes:
         passes: The per-bank results gathered before the failed write, or
             ``None`` when the raiser did not provide context.
-        stage: Which write failed: the raw tab (``"raw"``) or the layout tab
-            (``"layout"``).
+        stage: Which write failed. One stage exists since task 021 (``"layout"``);
+            it stays as the label the failure message prints.
         tab_name: The tab that could not be written, or ``None``.
     """
 
@@ -257,37 +250,33 @@ def _classify(passes: list[BankPass]) -> OverallStatus:
 def run_daily(
     *,
     connectors: Sequence[EnableBankingConnector] | None = None,
-    writer: SheetsWriter | None = None,
     layout_writer: LayoutWriter | None = None,
     document_id: str | None = None,
     today: date | None = None,
 ) -> DailySummary:
-    """Fetch this month from every bank once and write the raw and layout tabs.
+    """Fetch this month from every bank once and write the month tab.
 
-    The month is the execution month: ``<YYYY-MM>`` for the raw tab and
-    ``<YYYY-MM> Gastos`` for the layout. Both tabs are written from the same
-    single fetch, so each bank is queried once for movements and once for its
-    balance.
+    The month is the execution month: one tab, ``<YYYY-MM>``. Every bank is
+    queried once for movements and once for its balance, and both feed the same
+    single write.
 
     Raises:
         NoConnectorsError: ``connectors`` was an empty sequence. Nothing is
             read, fetched or written.
         NoBankFetchedError: no bank could contribute movements and at least one
             failed for real. Nothing is written, so an existing month survives.
-        DailySheetsError: resolving the document ID, writing the raw tab
-            (``stage="raw"``) or writing the layout tab (``stage="layout"``)
-            failed. A raw failure leaves the layout untouched.
+        DailySheetsError: resolving the document ID or writing the tab
+            (``stage="layout"``) failed.
 
     When every bank is merely not onboarded (no PSD2 session yet), the run
     finishes with `OverallStatus.NOTHING_TO_SYNC` and no tab is touched: the
-    writers clear a tab before filling it, so writing here would erase a month
+    writer clears a tab before filling it, so writing here would erase a month
     that no bank contributed to. The spreadsheet secret is not even read.
     """
     start = time.monotonic()
     execution_date = today or date.today()
     month_start = execution_date.replace(day=1)
-    raw_tab_name = execution_date.strftime("%Y-%m")
-    target_layout_tab = layout_tab_name(month_start)
+    target_tab = layout_tab_name(month_start)
 
     resolved_connectors: Sequence[EnableBankingConnector] = (
         connectors if connectors is not None else [cls() for cls in _CONNECTOR_CLASSES]
@@ -312,32 +301,26 @@ def run_daily(
         raise NoBankFetchedError(
             total_failure_message(failed, not_onboarded),
             passes=passes,
-            raw_tab_name=raw_tab_name,
-            layout_tab_name=target_layout_tab,
+            tab_name=target_tab,
         )
 
     if overall_status == OverallStatus.NOTHING_TO_SYNC:
         duration = time.monotonic() - start
         logger.info(
-            "Daily pass skipped: no bank is onboarded raw_tab=%s layout_tab=%s banks=%d "
-            "duration=%.3fs",
-            raw_tab_name,
-            target_layout_tab,
+            "Daily pass skipped: no bank is onboarded tab=%s banks=%d duration=%.3fs",
+            target_tab,
             len(passes),
             duration,
         )
         return DailySummary(
             passes=passes,
             overall_status=overall_status,
-            raw_tab_name=raw_tab_name,
-            layout_tab_name=target_layout_tab,
+            tab_name=target_tab,
             total_rows_written=0,
-            expense_count=0,
             balance_count=0,
             duration_seconds=duration,
         )
 
-    raw_rows = transaction_rows_for_banks([(run.bank_name, run.transactions) for run in passes])
     expense_rows = expense_rows_from_banks(passes)
     balances = balances_from_banks(passes)
 
@@ -345,45 +328,30 @@ def run_daily(
         resolved_document_id = (
             document_id if document_id is not None else SecretStore().get(_SHEET_ID_KEY)
         )
-        resolved_writer = writer if writer is not None else SheetsWriter()
-        resolved_writer.write(
-            document_id=resolved_document_id,
-            tab_name=raw_tab_name,
-            headers=_HEADERS,
-            rows=raw_rows,
-        )
-    except Exception as exc:
-        logger.error(
-            "Daily pass failed: system=sheets stage=raw tab=%s reason=%s", raw_tab_name, exc
-        )
-        raise DailySheetsError(str(exc), stage="raw", passes=passes, tab_name=raw_tab_name) from exc
-
-    try:
         resolved_layout_writer = layout_writer if layout_writer is not None else LayoutWriter()
         resolved_layout_writer.write(
             document_id=resolved_document_id,
-            tab_name=target_layout_tab,
+            tab_name=target_tab,
             transactions=expense_rows,
             balances=balances,
         )
     except Exception as exc:
         logger.error(
             "Daily pass failed: system=sheets stage=layout tab=%s reason=%s",
-            target_layout_tab,
+            target_tab,
             exc,
         )
         raise DailySheetsError(
-            str(exc), stage="layout", passes=passes, tab_name=target_layout_tab
+            str(exc), stage="layout", passes=passes, tab_name=target_tab
         ) from exc
 
     duration = time.monotonic() - start
     logger.info(
-        "Daily pass succeeded: status=%s raw_tab=%s layout_tab=%s rows_written=%d "
+        "Daily pass succeeded: status=%s tab=%s rows_written=%d "
         "balance_rows=%d balances_reported=%d duration=%.3fs",
         overall_status.value,
-        raw_tab_name,
-        target_layout_tab,
-        len(raw_rows),
+        target_tab,
+        len(expense_rows),
         len(balances),
         sum(1 for balance in balances if balance.amount is not None),
         duration,
@@ -391,10 +359,8 @@ def run_daily(
     return DailySummary(
         passes=passes,
         overall_status=overall_status,
-        raw_tab_name=raw_tab_name,
-        layout_tab_name=target_layout_tab,
-        total_rows_written=len(raw_rows),
-        expense_count=len(expense_rows),
+        tab_name=target_tab,
+        total_rows_written=len(expense_rows),
         balance_count=len(balances),
         duration_seconds=duration,
     )

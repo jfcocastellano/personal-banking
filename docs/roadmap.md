@@ -462,7 +462,7 @@ IT5 solo necesita el patrón de IT2; IT6 necesita el pipeline de IT4.
   pestaña. Un único comando (`python -m banking daily`) consulta cada
   banco una vez para movimientos y una vez para saldo, y escribe en la
   misma corrida la pestaña cruda `<YYYY-MM>` y la pestaña de layout
-  `<YYYY-MM Gastos>`, refrescando además el resumen y el panel de saldos
+  `<YYYY-MM>`, refrescando además el resumen y el panel de saldos
   (`J:K`) sin tocar el bloque manual `G:H`. `sync` y `layout` no cambian:
   `layout --month` queda como el camino de backfill.
 

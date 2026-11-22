@@ -1,6 +1,6 @@
 """CLI handler for the ``banking layout`` subcommand.
 
-``banking layout`` turns a month of bank data into the ``<YYYY-MM> Gastos``
+``banking layout`` turns a month of bank data into the ``<YYYY-MM>``
 layout tab. Transactions and balances are fetched per bank, each inside its own
 ``try``, so a transaction failure and a balance failure are reported separately
 and neither aborts the run (FR-011, plan.md "Failure isolation").
@@ -219,7 +219,7 @@ def run_layout(
     document_id: str | None = None,
     today: date | None = None,
 ) -> LayoutSummary:
-    """Fetch one month from every bank and write the ``<YYYY-MM> Gastos`` tab.
+    """Fetch one month from every bank and write the ``<YYYY-MM>`` tab.
 
     Runs each connector in the fixed ING/Revolut/MyInvestor/Sabadell order. A
     bank's transaction failure or balance failure is reported and never aborts
@@ -322,7 +322,7 @@ def add_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) 
     """
     parser = subparsers.add_parser(
         "layout",
-        help="Genera la pestaña de gastos del mes (<YYYY-MM> Gastos)",
+        help="Genera la pestaña de gastos del mes (<YYYY-MM>)",
     )
     parser.add_argument(
         "--month",

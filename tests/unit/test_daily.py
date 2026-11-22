@@ -14,7 +14,6 @@ from banking.connectors.enable_banking import (
 )
 from banking.daily import (
     BankPass,
-    DailySheetsError,
     DailySummary,
     NoBankFetchedError,
     collect_bank_runs,
@@ -383,7 +382,7 @@ def _expense(description: str, amount: str, bank: str) -> ExpenseRow:
     )
 
 
-def test_run_daily_full_success_writes_both_tabs_with_the_same_movements() -> None:
+def test_run_daily_full_success_writes_the_month_tab() -> None:
     ing = _FakeConnector(
         "ING España",
         transactions=[_transaction("ING tx"), _transaction("ING tx 2", "-3.00")],
@@ -394,12 +393,10 @@ def test_run_daily_full_success_writes_both_tabs_with_the_same_movements() -> No
         transactions=[_transaction("Revolut tx", "-5.00")],
         balance=_balance("80.00"),
     )
-    raw_writer = _RecordingWriter()
     layout_writer = _RecordingLayoutWriter()
 
     summary = run_daily(
         connectors=[ing, revolut],
-        writer=raw_writer,
         layout_writer=layout_writer,
         document_id=_DOCUMENT_ID,
         today=_END,
@@ -410,22 +407,10 @@ def test_run_daily_full_success_writes_both_tabs_with_the_same_movements() -> No
         assert connector.transactions_calls == [(_START, _END)]
         assert connector.balance_calls == 1
 
-    assert raw_writer.calls == [
-        {
-            "document_id": _DOCUMENT_ID,
-            "tab_name": "2026-11",
-            "headers": _RAW_HEADERS,
-            "rows": [
-                _row("ING tx"),
-                _row("ING tx 2", "-3.00"),
-                _row("Revolut tx", "-5.00", bank="Revolut"),
-            ],
-        }
-    ]
     assert layout_writer.calls == [
         {
             "document_id": _DOCUMENT_ID,
-            "tab_name": "2026-11 Gastos",
+            "tab_name": "2026-11",
             "transactions": [
                 _expense("ING tx", "10.00", "ING España"),
                 _expense("ING tx 2", "-3.00", "ING España"),
@@ -446,8 +431,8 @@ def test_run_daily_full_success_writes_both_tabs_with_the_same_movements() -> No
         }
     ]
 
-    # FR-002: both tabs carry the same movement set, counted as rows.
-    assert len(layout_writer.calls[0]["transactions"]) == len(raw_writer.calls[0]["rows"])
+    # Since task 021 the month is one tab, so the count is that write's own.
+    assert summary.total_rows_written == len(layout_writer.calls[0]["transactions"])
     assert summary == DailySummary(
         passes=[
             BankPass(
@@ -462,10 +447,8 @@ def test_run_daily_full_success_writes_both_tabs_with_the_same_movements() -> No
             ),
         ],
         overall_status=OverallStatus.FULL_SUCCESS,
-        raw_tab_name="2026-11",
-        layout_tab_name="2026-11 Gastos",
+        tab_name="2026-11",
         total_rows_written=3,
-        expense_count=3,
         balance_count=2,
         duration_seconds=summary.duration_seconds,
     )
@@ -479,12 +462,10 @@ def test_run_daily_bank_with_zero_movements_still_counts_as_success() -> None:
         transactions=[_transaction("ING tx")],
         balance=_balance("120.00"),
     )
-    raw_writer = _RecordingWriter()
     layout_writer = _RecordingLayoutWriter()
 
     summary = run_daily(
         connectors=[empty, healthy],
-        writer=raw_writer,
         layout_writer=layout_writer,
         document_id=_DOCUMENT_ID,
         today=_END,
@@ -494,7 +475,6 @@ def test_run_daily_bank_with_zero_movements_still_counts_as_success() -> None:
     assert summary.total_rows_written == 1
     assert summary.balance_count == 2
     assert len(layout_writer.calls) == 1
-    assert len(raw_writer.calls) == 1
 
 
 def test_run_daily_all_not_onboarded_writes_nothing_and_never_reads_secret(
@@ -517,17 +497,15 @@ def test_run_daily_all_not_onboarded_writes_nothing_and_never_reads_secret(
     with caplog.at_level(logging.INFO, logger="banking.daily"):
         summary = run_daily(
             connectors=connectors,
-            writer=_ExplodingWriter(),
             layout_writer=_ExplodingLayoutWriter(),
             today=_END,
         )
 
     assert summary.overall_status == OverallStatus.NOTHING_TO_SYNC
     assert summary.total_rows_written == 0
-    assert summary.expense_count == 0
+    assert summary.total_rows_written == 0
     assert summary.balance_count == 0
-    assert summary.raw_tab_name == "2026-11"
-    assert summary.layout_tab_name == "2026-11 Gastos"
+    assert summary.tab_name == "2026-11"
     assert {run.not_onboarded for run in summary.passes} == {True}
 
     records = _daily_records(caplog)
@@ -557,15 +535,13 @@ def test_run_daily_total_failure_raises_without_writing_anything(
         with pytest.raises(NoBankFetchedError) as excinfo:
             run_daily(
                 connectors=connectors,
-                writer=_ExplodingWriter(),
                 layout_writer=_ExplodingLayoutWriter(),
                 today=_END,
             )
 
     exc = excinfo.value
     assert [run.bank_name for run in exc.passes] == ["ING España", "Revolut"]
-    assert exc.raw_tab_name == "2026-11"
-    assert exc.layout_tab_name == "2026-11 Gastos"
+    assert exc.tab_name == "2026-11"
     assert "ING España: ing boom" in str(exc)
 
     errors = [record for record in _daily_records(caplog) if record.levelno == logging.ERROR]
@@ -592,7 +568,6 @@ def test_run_daily_total_failure_message_never_calls_not_onboarded_banks_failed(
     with pytest.raises(NoBankFetchedError) as excinfo:
         run_daily(
             connectors=connectors,
-            writer=_ExplodingWriter(),
             layout_writer=_ExplodingLayoutWriter(),
             today=_END,
         )
@@ -614,12 +589,10 @@ def test_run_daily_one_success_and_one_failure_is_partial_and_writes_both_tabs()
         transactions=[_transaction("Revolut tx")],
         balance=_balance("80.00"),
     )
-    raw_writer = _RecordingWriter()
     layout_writer = _RecordingLayoutWriter()
 
     summary = run_daily(
         connectors=[failing, healthy],
-        writer=raw_writer,
         layout_writer=layout_writer,
         document_id=_DOCUMENT_ID,
         today=_END,
@@ -627,62 +600,11 @@ def test_run_daily_one_success_and_one_failure_is_partial_and_writes_both_tabs()
 
     assert summary.overall_status == OverallStatus.PARTIAL_FAILURE
     assert summary.total_rows_written == 1
-    assert summary.expense_count == 1
+    assert summary.total_rows_written == 1
     assert summary.balance_count == 2
-    assert len(raw_writer.calls) == 1
     assert len(layout_writer.calls) == 1
 
 
-def test_run_daily_raw_failure_raises_before_the_layout_writer_is_called() -> None:
-    connector = _FakeConnector(
-        "Revolut",
-        transactions=[_transaction("Revolut tx")],
-        balance=_balance("80.00"),
-    )
-    layout_writer = _RecordingLayoutWriter()
-
-    with pytest.raises(DailySheetsError) as excinfo:
-        run_daily(
-            connectors=[connector],
-            writer=_RecordingWriter(error=RuntimeError("raw exploded")),
-            layout_writer=layout_writer,
-            document_id=_DOCUMENT_ID,
-            today=_END,
-        )
-
-    exc = excinfo.value
-    assert exc.stage == "raw"
-    assert exc.tab_name == "2026-11"
-    assert str(exc) == "raw exploded"
-    assert [run.bank_name for run in exc.passes] == ["Revolut"]
-    assert layout_writer.calls == []
-
-
-def test_run_daily_layout_failure_raises_after_the_raw_tab_was_written() -> None:
-    connector = _FakeConnector(
-        "Revolut",
-        transactions=[_transaction("Revolut tx")],
-        balance=_balance("80.00"),
-    )
-    raw_writer = _RecordingWriter()
-    layout_writer = _RecordingLayoutWriter(error=RuntimeError("layout exploded"))
-
-    with pytest.raises(DailySheetsError) as excinfo:
-        run_daily(
-            connectors=[connector],
-            writer=raw_writer,
-            layout_writer=layout_writer,
-            document_id=_DOCUMENT_ID,
-            today=_END,
-        )
-
-    exc = excinfo.value
-    assert exc.stage == "layout"
-    assert exc.tab_name == "2026-11 Gastos"
-    assert str(exc) == "layout exploded"
-    assert [run.bank_name for run in exc.passes] == ["Revolut"]
-    assert len(raw_writer.calls) == 1
-    assert len(layout_writer.calls) == 1
 
 
 def test_run_daily_balance_failure_keeps_movements_and_writes_an_empty_balance_row() -> None:
@@ -691,12 +613,10 @@ def test_run_daily_balance_failure_keeps_movements_and_writes_an_empty_balance_r
         transactions=[_transaction("Revolut tx")],
         balance_error=RuntimeError("balance exploded"),
     )
-    raw_writer = _RecordingWriter()
     layout_writer = _RecordingLayoutWriter()
 
     summary = run_daily(
         connectors=[connector],
-        writer=raw_writer,
         layout_writer=layout_writer,
         document_id=_DOCUMENT_ID,
         today=_END,
@@ -704,9 +624,8 @@ def test_run_daily_balance_failure_keeps_movements_and_writes_an_empty_balance_r
 
     assert summary.overall_status == OverallStatus.FULL_SUCCESS
     assert summary.total_rows_written == 1
-    assert summary.expense_count == 1
+    assert summary.total_rows_written == 1
     assert summary.balance_count == 1
-    assert raw_writer.calls[0]["rows"] == [_row("Revolut tx", bank="Revolut")]
     assert layout_writer.calls[0]["balances"] == [
         AccountBalance(bank="Revolut", amount=None, currency="EUR", reference_date=None)
     ]
@@ -716,7 +635,6 @@ def test_run_daily_without_connectors_raises_no_connectors_error() -> None:
     with pytest.raises(NoConnectorsError):
         run_daily(
             connectors=[],
-            writer=_ExplodingWriter(),
             layout_writer=_ExplodingLayoutWriter(),
             document_id=_DOCUMENT_ID,
             today=_END,
@@ -740,7 +658,6 @@ def test_success_log_separates_balance_rows_from_reported_balances(
     with caplog.at_level(logging.INFO, logger="banking.daily"):
         run_daily(
             connectors=[reporting, silent],
-            writer=_RecordingWriter(),
             layout_writer=_RecordingLayoutWriter(),
             document_id=_DOCUMENT_ID,
             today=_END,
@@ -768,38 +685,3 @@ def _transaction_on(booking_date: date, description: str, amount: str) -> Transa
     )
 
 
-def test_run_daily_writes_the_raw_tab_oldest_first_across_banks() -> None:
-    """The daily call path flattens banks in one ascending order, not bank by bank."""
-    ing = _FakeConnector(
-        "ING España",
-        transactions=[
-            _transaction_on(date(2026, 11, 9), "ING última", "10.00"),
-            _transaction_on(date(2026, 11, 5), "ING primera", "10.00"),
-        ],
-        balance=_balance("120.00"),
-    )
-    revolut = _FakeConnector(
-        "Revolut",
-        transactions=[
-            _transaction_on(date(2026, 11, 5), "Revolut mismo día", "-5.00"),
-            _transaction_on(date(2026, 11, 2), "Revolut primera", "-1.00"),
-        ],
-        balance=_balance("80.00"),
-    )
-    raw_writer = _RecordingWriter()
-
-    run_daily(
-        connectors=[ing, revolut],
-        writer=raw_writer,
-        layout_writer=_RecordingLayoutWriter(),
-        document_id=_DOCUMENT_ID,
-        today=_END,
-    )
-
-    raw_rows = raw_writer.calls[0]["rows"]
-    assert [(row[0], row[1], row[2]) for row in raw_rows] == [
-        ("2026-11-02", "Revolut", "Revolut primera"),
-        ("2026-11-05", "ING España", "ING primera"),
-        ("2026-11-05", "Revolut", "Revolut mismo día"),
-        ("2026-11-09", "ING España", "ING última"),
-    ]

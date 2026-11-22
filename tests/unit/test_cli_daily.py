@@ -80,10 +80,8 @@ def _summary(
     return DailySummary(
         passes=passes,
         overall_status=status,
-        raw_tab_name="2026-11",
-        layout_tab_name="2026-11 Gastos",
+        tab_name="2026-11",
         total_rows_written=rows if raw_rows is None else raw_rows,
-        expense_count=rows if expense_rows is None else expense_rows,
         balance_count=len(passes) if balance_rows is None else balance_rows,
         duration_seconds=duration,
     )
@@ -224,8 +222,7 @@ def test_full_success_prints_both_tabs_and_exits_zero(
     assert exit_code == 0
     captured = capsys.readouterr()
     assert captured.err == ""
-    assert summary.raw_tab_name in captured.out
-    assert summary.layout_tab_name in captured.out
+    assert summary.tab_name in captured.out
     assert _BANK_A in captured.out
     assert _BANK_B in captured.out
     assert "3 movimientos" in captured.out
@@ -260,8 +257,7 @@ def test_nothing_to_sync_prints_the_skip_and_exits_zero(
     assert captured.err == ""
     assert "omitida" in captured.out
     assert "no se ha escrito nada" in captured.out
-    assert summary.raw_tab_name in captured.out
-    assert summary.layout_tab_name in captured.out
+    assert summary.tab_name in captured.out
     assert "FALLÓ" not in captured.out
 
 
@@ -275,8 +271,7 @@ def _total_failure_exception() -> NoBankFetchedError:
             _pass(_BANK_A, transactions_failure="ing boom", balance_failure="ing boom"),
             _pass(_BANK_B, transactions_failure="revolut boom", balance_failure="revolut boom"),
         ],
-        raw_tab_name="2026-11",
-        layout_tab_name="2026-11 Gastos",
+        tab_name="2026-11",
     )
 
 
@@ -310,7 +305,7 @@ def test_total_failure_exits_one_and_notifies_once(
     ("stage", "tab_name"),
     [
         pytest.param("raw", "2026-11", id="raw"),
-        pytest.param("layout", "2026-11 Gastos", id="layout"),
+        pytest.param("layout", "2026-11", id="layout"),
     ],
 )
 def test_sheets_failure_exits_two_and_names_the_failed_stage(
@@ -362,7 +357,7 @@ def test_partial_failure_exits_three_and_notifies_exactly_once(
     assert exit_code == 3
     notifier.notify_failure.assert_called_once()
     kwargs = notifier.notify_failure.call_args.kwargs
-    assert kwargs["tab_name"] == summary.raw_tab_name
+    assert kwargs["tab_name"] == summary.tab_name
     assert kwargs["sheets_error"] is None
     assert kwargs["duration_seconds"] == summary.duration_seconds
     captured = capsys.readouterr()
@@ -394,7 +389,7 @@ def test_partial_failure_with_failed_delivery_exits_four(
     [
         pytest.param(_total_failure_exception(), 1, id="total"),
         pytest.param(
-            DailySheetsError("no access", stage="raw", tab_name="2026-11"), 2, id="sheets"
+            DailySheetsError("no access", stage="layout", tab_name="2026-11"), 2, id="sheets"
         ),
     ],
 )
@@ -451,8 +446,7 @@ def test_report_prints_sin_sesion_psd2_and_the_balance_reference(
     out = capsys.readouterr().out
     assert "SIN SESIÓN PSD2" in out
     assert _BANK_C in out
-    assert summary.raw_tab_name in out
-    assert summary.layout_tab_name in out
+    assert summary.tab_name in out
     assert "1234.50" in out
     assert "2026-11-20" in out
     assert "sin dato de referencia" in out
@@ -559,8 +553,7 @@ def test_summary_json_flag_writes_the_document_and_leaves_stdout_identical(
     assert payload["schema"] == "banking.summary/v1"
     assert payload["status"] == "full_success"
     assert payload["exit_code"] == 0
-    assert payload["raw_tab"] == "2026-11"
-    assert payload["layout_tab"] == "2026-11 Gastos"
+    assert payload["tab"] == "2026-11"
     assert payload["sheets_error"] is None
 
 
@@ -588,7 +581,6 @@ def test_summary_json_payload_matches_the_printed_headline_and_the_counters(
     assert payload["banks_failed"] == 0
     assert payload["balance_failures"] == 0
     assert payload["rows_written"] == summary.total_rows_written
-    assert payload["expense_count"] == summary.expense_count
     assert payload["balance_count"] == summary.balance_count
     assert payload["not_onboarded_banks"] == []
     first, second = payload["banks"]
@@ -627,7 +619,7 @@ def test_summary_json_records_the_nothing_to_sync_status(
             _total_failure_exception(), "total_failure", DeliveryStatus.SENT, 1, id="total"
         ),
         pytest.param(
-            DailySheetsError("no access", stage="raw", tab_name="2026-11"),
+            DailySheetsError("no access", stage="layout", tab_name="2026-11"),
             "sheets_failure",
             DeliveryStatus.SENT,
             2,
@@ -667,25 +659,22 @@ def test_summary_json_is_written_on_the_failure_paths_with_the_final_exit_code(
 
 
 @pytest.mark.parametrize(
-    ("stage", "tab_name", "raw_tab", "layout_tab"),
+    "tab_name",
     [
-        pytest.param("raw", "2026-11", "2026-11", "2026-11 Gastos", id="raw"),
-        pytest.param("layout", "2026-11 Gastos", "2026-11", "2026-11 Gastos", id="layout"),
+        pytest.param("2026-11", id="named"),
+        pytest.param(None, id="fallback-to-the-month"),
     ],
 )
-def test_summary_json_names_the_right_tab_for_the_failed_sheets_stage(
+def test_summary_json_names_the_failed_tab(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     mocker: MockerFixture,
-    stage: str,
-    tab_name: str,
-    raw_tab: str,
-    layout_tab: str,
+    tab_name: str | None,
 ) -> None:
-    """Only the failed stage names its tab; the other keeps the month's own name."""
+    """The failed write names its tab; the month's own name is the fallback."""
     exc = DailySheetsError(
         "no access",
-        stage=stage,
+        stage="layout",
         passes=[_pass(_BANK_A, transactions=(_transaction(),), balance=_balance())],
         tab_name=tab_name,
     )
@@ -697,8 +686,7 @@ def test_summary_json_names_the_right_tab_for_the_failed_sheets_stage(
 
     payload = json.loads(path.read_text(encoding="utf-8"))
     assert payload["status"] == "sheets_failure"
-    assert payload["raw_tab"] == raw_tab
-    assert payload["layout_tab"] == layout_tab
+    assert payload["tab"] == "2026-11"
 
 
 def test_summary_json_records_exit_four_when_the_notification_fails_on_a_partial_run(

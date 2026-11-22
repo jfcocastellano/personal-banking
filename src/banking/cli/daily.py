@@ -2,7 +2,7 @@
 
 ``banking daily`` performs the single daily pass: it asks every bank once for
 movements and once for its balance, then writes the raw ``<YYYY-MM>`` tab and
-the ``<YYYY-MM> Gastos`` layout tab from that same fetch. The month is always
+the ``<YYYY-MM>`` layout tab from that same fetch. The month is always
 the execution month: the command has no month parameter, and backfills stay in
 ``banking layout``. Its one option, ``--summary-json PATH``, only writes a JSON
 copy of the run summary; it never changes what the command prints.
@@ -142,8 +142,8 @@ def _completion_headline(result: DailySummary, succeeded: int, total: int) -> tu
     if result.overall_status is OverallStatus.NOTHING_TO_SYNC:
         return (
             "Pasada diaria omitida: ningún banco tiene sesión PSD2 — "
-            f"no se ha escrito nada en las pestañas {result.raw_tab_name} y "
-            f"{result.layout_tab_name} ({result.duration_seconds:.2f}s)",
+            f"no se ha escrito nada en la pestaña {result.tab_name} "
+            f"({result.duration_seconds:.2f}s)",
             0,
         )
 
@@ -156,8 +156,7 @@ def _completion_headline(result: DailySummary, succeeded: int, total: int) -> tu
 
     return (
         f"{headline}: {succeeded}/{total} bancos — "
-        f"{result.total_rows_written} movimientos en la pestaña {result.raw_tab_name} y "
-        f"{result.expense_count} filas en la pestaña {result.layout_tab_name} "
+        f"{result.total_rows_written} movimientos en la pestaña {result.tab_name} "
         f"({result.duration_seconds:.2f}s)",
         exit_code,
     )
@@ -194,7 +193,7 @@ def _print_summary(
             notifier,
             outcomes,
             sheets_error=None,
-            tab_name=result.raw_tab_name,
+            tab_name=result.tab_name,
             duration_seconds=result.duration_seconds,
             notifier_factory=EmailNotifier,
         )
@@ -220,7 +219,7 @@ def _finish_total_failure(
         notifier,
         _as_outcomes(exc.passes or []),
         sheets_error=None,
-        tab_name=exc.raw_tab_name or current_tab_name(),
+        tab_name=exc.tab_name or current_tab_name(),
         duration_seconds=0.0,
         notifier_factory=EmailNotifier,
     )

@@ -9,15 +9,14 @@ con los demás.
 ## Qué hace
 
 ```text
-Enable Banking (PSD2)  →  conectores  →  pestaña cruda  `2026-11`
-                                     →  pestaña layout  `2026-11 Gastos`
+Enable Banking (PSD2)  →  conectores  →  pestaña del mes  `2026-11`
                                             ├─ gastos individuales  B4:E403
                                             ├─ gastos comunes       G:H   (se edita a mano)
                                             └─ resumen + saldos     J:K
 ```
 
-Una sola pasada por banco alimenta las dos pestañas: el detalle completo (fecha,
-banco, descripción, importe, divisa) y el layout de contabilidad del mes.
+Una sola pasada por banco alimenta una sola pestaña: el layout de contabilidad de
+mes, con fecha, banco, descripción e importe en `B:E`.
 
 | Banco | Estado |
 | --- | --- |
@@ -87,7 +86,7 @@ CI (`.github/workflows/ci.yml`) corre en cada push exactamente eso, más `pip-au
   el mes anterior deja de actualizarse cuando cambia el mes.
 - **Cuota PSD2**: 4 `GET` por cuenta y día. Una pasada manual el mismo día consume cupo
   de la del cron.
-- **La pestaña `Gastos` no se reescribe entera**: `B3:E403` y `J:K` son de la máquina;
+- **La pestaña del mes no se reescribe entera**: `B3:E403` y `J:K` son de la máquina;
   lo que edites en `G:H` sobrevive.
 
 ## Privacidad

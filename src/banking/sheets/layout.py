@@ -36,6 +36,15 @@ from banking.sheets.writer import (
 
 logger = logging.getLogger(__name__)
 
+
+class RawTabCollisionError(Exception):
+    """A tab still holding the raw movement grid was about to be written as layout.
+
+    Raised on the refresh path when the target tab's ``B3:E`` headers are the raw
+    pipeline's: with the layout tab renamed to the bare month, that tab is the
+    one the owner is still migrating, and clearing it would destroy the raw rows.
+    """
+
 # Writes one cell into the grid under construction: (row, column, value).
 Place = Callable[[int, int, CellValue], None]
 
@@ -170,9 +179,17 @@ _TITLE_RANGES: tuple[str, ...] = (
 
 _NO_REFERENCE_DATE = "sin dato de referencia"
 
-# Tab-name suffix shared by every layout tab. ``banking.cli.layout`` builds its
-# tab names through ``layout_tab_name``, so the format lives here only.
-_LAYOUT_TAB_SUFFIX = " Gastos"
+# The raw pipeline's five columns (``banking.sync._HEADERS``). Duplicated on
+# purpose: importing the sync pipeline from the sheet layer would invert the
+# dependency, and a test pins the two lists equal so they cannot drift apart.
+# Only the collision guard reads it — the layout writes four columns.
+_RAW_HEADERS: tuple[str, ...] = (
+    "Fecha de liquidación",
+    "Banco",
+    "Descripción",
+    "Importe",
+    "Divisa",
+)
 
 _BOLD = {"textFormat": {"bold": True}}
 _MONEY_FORMAT = {"numberFormat": {"type": "NUMBER", "pattern": '#,##0.00 "€"'}}
@@ -274,9 +291,10 @@ def layout_tab_name(month_start: date) -> str:
         month_start: Any date of the target month; the day is ignored.
 
     Returns:
-        ``<YYYY-MM> Gastos``, the single tab-name format the layout owns.
+        ``<YYYY-MM>``, the bare month: since task 021 this is the only tab the
+        month owns, so the `` Gastos`` suffix that told the two tabs apart is gone.
     """
-    return f"{month_start.strftime('%Y-%m')}{_LAYOUT_TAB_SUFFIX}"
+    return month_start.strftime("%Y-%m")
 
 
 def _expense_row(transaction: ExpenseRow) -> list[CellValue]:
@@ -432,6 +450,36 @@ def _resolve_layout_worksheet(
     return worksheet, True
 
 
+def _ensure_not_raw_tab(worksheet: gspread.Worksheet) -> None:
+    """Refuse a tab that still holds the raw grid instead of overwriting it.
+
+    The refresh path clears ``B3:E403`` before writing, so a tab left in the raw
+    shape would silently lose every row it holds. The tab that carried that shape
+    is exactly the one the layout now targets (same bare month), which makes this
+    the one collision the rename cannot prevent by ordering alone.
+
+    Raises:
+        RawTabCollisionError: the existing ``B3:E`` headers are the raw ones.
+        SheetsAccessError: the header row could not be read.
+    """
+    try:
+        existing = worksheet.row_values(_HEADER_ROW)
+    except gspread.exceptions.APIError as exc:
+        raise _translate_api_error(exc) from exc
+
+    # gspread returns the row from column A, so an empty A3 arrives as a leading
+    # blank and the headers start at index 1. Compare from the first filled cell.
+    while existing and not str(existing[0]).strip():
+        existing = existing[1:]
+
+    if [str(cell).strip() for cell in existing[: len(_RAW_HEADERS)]] == list(_RAW_HEADERS):
+        raise RawTabCollisionError(
+            f"tab {worksheet.title!r} still holds the raw movements grid, so writing "
+            f"the layout would destroy those rows; delete that tab and rerun, the "
+            f"layout tab is now the bare month"
+        )
+
+
 def _write_grid(worksheet: gspread.Worksheet, grid: list[list[CellValue]]) -> None:
     """Write the whole grid from A1 with USER_ENTERED, so formulas evaluate."""
     try:
@@ -538,7 +586,7 @@ def _apply_light_formatting(worksheet: gspread.Worksheet, balance_count: int) ->
 
 
 class LayoutWriter:
-    """Owns the ``<YYYY-MM> Gastos`` tab.
+    """Owns the ``<YYYY-MM>`` tab.
 
     The tab is created once with the full grid. Every later run clears and
     rewrites ``B3:E403`` (header included) and the ``J:K`` summary/balances panel
@@ -586,9 +634,11 @@ class LayoutWriter:
                 _merge_titles(worksheet)
                 _apply_light_formatting(worksheet, balance_count=len(balances))
             else:
+                _ensure_not_raw_tab(worksheet)
                 _write_expense_region(worksheet, transactions)
                 _write_summary_region(worksheet, balances)
         except (
+            RawTabCollisionError,
             SheetsConfigError,
             SheetsAccessError,
             SheetsQuotaExceededError,

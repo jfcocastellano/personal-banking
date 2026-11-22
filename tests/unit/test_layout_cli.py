@@ -213,7 +213,7 @@ def test_malformed_month_exits_two_without_touching_the_writer(
 # --- successful run ---------------------------------------------------------
 
 
-def test_successful_run_writes_the_gastos_tab_and_never_the_plain_month_tab(
+def test_successful_run_writes_the_month_tab(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     writer = _install(
@@ -226,9 +226,8 @@ def test_successful_run_writes_the_gastos_tab_and_never_the_plain_month_tab(
 
     assert exit_code == 0
     assert len(writer.calls) == 1
-    assert writer.calls[0]["tab_name"] == "2026-08 Gastos"
-    assert writer.calls[0]["tab_name"] != "2026-08"
-    assert "2026-08 Gastos" in capsys.readouterr().out
+    assert writer.calls[0]["tab_name"] == "2026-08"
+    assert "2026-08" in capsys.readouterr().out
 
 
 def test_month_defaults_to_the_current_month(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -243,7 +242,7 @@ def test_month_defaults_to_the_current_month(monkeypatch: pytest.MonkeyPatch) ->
 
     today = date.today()
     assert exit_code == 0
-    assert writer.calls[0]["tab_name"] == f"{today.strftime('%Y-%m')} Gastos"
+    assert writer.calls[0]["tab_name"] == f"{today.strftime('%Y-%m')}"
     assert calls == [(today.replace(day=1), today)]
 
 
@@ -275,7 +274,7 @@ def test_run_layout_fetches_the_whole_requested_month(
     layout_cli.run_layout(month=date(2026, 2, 1), today=date(2026, 8, 15))
 
     assert calls == [(date(2026, 2, 1), date(2026, 2, 28))]
-    assert writer.calls[0]["tab_name"] == "2026-02 Gastos"
+    assert writer.calls[0]["tab_name"] == "2026-02"
 
 
 def test_transactions_become_expense_rows_with_the_bank_name(
@@ -464,7 +463,7 @@ def test_writer_failure_exits_non_zero(
     assert len(writer.calls) == 1
     captured = capsys.readouterr()
     assert "ERROR (layout)" in captured.err
-    assert "2026-08 Gastos" in captured.err
+    assert "2026-08" in captured.err
     assert "doc-1 not found" in captured.err
 
 
@@ -494,7 +493,7 @@ def test_report_counts_match_what_was_passed_to_the_writer(
     assert "Layout completado" in out
     assert f"{len(written['transactions'])} movimientos" in out
     assert f"{len(written['balances'])} saldos" in out
-    assert "2026-08 Gastos" in out
+    assert "2026-08" in out
 
 
 def test_report_line_per_bank_in_the_configured_order(

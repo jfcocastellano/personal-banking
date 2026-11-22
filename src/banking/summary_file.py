@@ -55,12 +55,7 @@ def _execution_date(today: date | None) -> date:
 
 
 def _month_tab(execution_date: date) -> str:
-    """The raw tab of the execution month, ``<YYYY-MM>``."""
-    return execution_date.strftime("%Y-%m")
-
-
-def _layout_tab(execution_date: date) -> str:
-    """The layout tab of the execution month, ``<YYYY-MM> Gastos``."""
+    """The month tab, ``<YYYY-MM>``: the only tab a run writes since task 021."""
     return layout_tab_name(execution_date.replace(day=1))
 
 
@@ -82,11 +77,9 @@ def _payload(
     status: str,
     exit_code: int,
     headline: str,
-    raw_tab: str,
-    layout_tab: str,
+    tab: str,
     passes: Sequence[BankPass],
     rows_written: int,
-    expense_count: int,
     balance_count: int,
     duration_seconds: float,
     sheets_error: str | None,
@@ -97,8 +90,7 @@ def _payload(
         "date": execution_date.isoformat(),
         "status": status,
         "exit_code": exit_code,
-        "raw_tab": raw_tab,
-        "layout_tab": layout_tab,
+        "tab": tab,
         "headline": headline,
         "banks_total": len(passes),
         "banks_succeeded": sum(1 for run in passes if _succeeded(run)),
@@ -106,7 +98,6 @@ def _payload(
         "banks_failed": sum(1 for run in passes if _failed(run)),
         "balance_failures": sum(1 for run in passes if run.balance_failure is not None),
         "rows_written": rows_written,
-        "expense_count": expense_count,
         "balance_count": balance_count,
         "duration_seconds": duration_seconds,
         "sheets_error": sheets_error,
@@ -138,11 +129,9 @@ def build_payload(
         status=summary.overall_status.value,
         exit_code=exit_code,
         headline=headline,
-        raw_tab=summary.raw_tab_name,
-        layout_tab=summary.layout_tab_name,
+        tab=summary.tab_name,
         passes=summary.passes,
         rows_written=summary.total_rows_written,
-        expense_count=summary.expense_count,
         balance_count=summary.balance_count,
         duration_seconds=summary.duration_seconds,
         sheets_error=None,
@@ -168,11 +157,9 @@ def build_total_failure_payload(
         status=TOTAL_FAILURE_STATUS,
         exit_code=exit_code,
         headline=headline,
-        raw_tab=exc.raw_tab_name or _month_tab(execution_date),
-        layout_tab=exc.layout_tab_name or _layout_tab(execution_date),
+        tab=exc.tab_name or _month_tab(execution_date),
         passes=exc.passes or [],
         rows_written=0,
-        expense_count=0,
         balance_count=0,
         duration_seconds=0.0,
         sheets_error=None,
@@ -186,33 +173,22 @@ def build_sheets_failure_payload(
     exit_code: int,
     today: date | None = None,
 ) -> dict[str, object]:
-    """Build the document of a run whose raw or layout write failed.
+    """Build the document of a run whose only write failed.
 
-    Only the failed stage names its tab: the exception carries the tab it could
-    not write, and a layout-stage failure carries ``"<YYYY-MM> Gastos"``
-    (``banking.daily`` raises it with ``tab_name=target_layout_tab``), so the
-    other tab always keeps the month's own name.
-
-    A raw failure left both tabs untouched, so no counter moves. A layout
-    failure happened after the raw tab was written: ``rows_written`` therefore
-    reports what that stage did write, while the layout counters stay ``0``
-    because the layout tab was never filled.
+    The exception carries the tab it could not write, so that tab is named here
+    and the month's own name is the fallback when it carries none. Nothing was
+    written on this path, so every counter stays ``0``.
     """
     execution_date = _execution_date(today)
-    month_tab = _month_tab(execution_date)
-    month_layout_tab = _layout_tab(execution_date)
     passes = exc.passes or []
-    raw_failed = exc.stage == "raw"
     return _payload(
         execution_date=execution_date,
         status=SHEETS_FAILURE_STATUS,
         exit_code=exit_code,
         headline=headline,
-        raw_tab=(exc.tab_name or month_tab) if raw_failed else month_tab,
-        layout_tab=month_layout_tab if raw_failed else (exc.tab_name or month_layout_tab),
+        tab=exc.tab_name or _month_tab(execution_date),
         passes=passes,
-        rows_written=0 if raw_failed else sum(len(run.transactions) for run in passes),
-        expense_count=0,
+        rows_written=0,
         balance_count=0,
         duration_seconds=0.0,
         sheets_error=f"etapa {exc.stage}: {exc}",

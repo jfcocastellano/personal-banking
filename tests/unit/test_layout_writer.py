@@ -17,7 +17,14 @@ from unittest.mock import Mock
 import gspread
 import pytest
 
-from banking.sheets.layout import AccountBalance, ExpenseRow, LayoutWriter
+from banking.sheets.layout import (
+    _RAW_HEADERS,
+    AccountBalance,
+    ExpenseRow,
+    LayoutWriter,
+    RawTabCollisionError,
+    layout_tab_name,
+)
 from banking.sheets.writer import SheetsAccessError, SheetsQuotaExceededError
 
 EXPENSE_REGION = "B3:E403"
@@ -129,6 +136,13 @@ class FakeWorksheet:
                 raise AssertionError(f"summary clear must start at J4: {range_name!r}")
             self.cleared.append(range_name)
             self._delete(first_row, last_row, 10, 11)
+
+    def row_values(self, row: int) -> list[Any]:
+        """Row as gspread returns it: from column A to the last filled cell, gaps as ""."""
+        filled = [column for (row_index, column) in self.cells if row_index == row]
+        if not filled:
+            return []
+        return [self.cells.get((row, column), "") for column in range(1, max(filled) + 1)]
 
     def clear(self) -> None:
         raise AssertionError("clear() would wipe the whole tab, including hand edits")
@@ -681,3 +695,83 @@ def test_success_logs_tab_and_row_count(caplog: pytest.LogCaptureFixture) -> Non
     assert "Sheets write succeeded" in infos[0]
     assert "tab=2026-08 Gastos" in infos[0]
     assert "rows_written=2" in infos[0]
+
+
+# --- the raw tab is never overwritten by the layout grid --------------------
+#
+# Renaming the layout tab to the bare month (task 021, D4) makes ``2026-11`` the
+# target while the owner is still migrating by hand: that tab holds the raw grid
+# until they delete it. Writing over it would clear B3:E403 and lose the raw
+# rows, so the write refuses instead of guessing.
+
+
+def test_tab_name_is_the_bare_month() -> None:
+    assert layout_tab_name(date(2026, 11, 1)) == "2026-11"
+
+
+def test_raw_header_constant_matches_the_raw_pipeline() -> None:
+    """One source of truth, pinned: two copies that drift would disarm the guard."""
+    from banking import sync
+
+    assert tuple(_RAW_HEADERS) == tuple(sync._HEADERS)
+
+
+def _store_headers(worksheet: FakeWorksheet, headers: list[str]) -> None:
+    for offset, header in enumerate(headers):
+        worksheet.cells[(3, 2 + offset)] = header
+
+
+def test_refresh_refuses_a_tab_that_still_holds_the_raw_grid() -> None:
+    spreadsheet = FakeSpreadsheet()
+    worksheet = FakeWorksheet("2026-11")
+    _store_headers(worksheet, list(_RAW_HEADERS))
+    spreadsheet.sheets["2026-11"] = worksheet
+    writer, _ = _writer(spreadsheet)
+
+    with pytest.raises(RawTabCollisionError) as excinfo:
+        writer.write(
+            document_id="doc",
+            tab_name="2026-11",
+            transactions=[_expense()],
+            balances=[_balance()],
+        )
+
+    assert "raw" in str(excinfo.value)
+    assert "2026-11" in str(excinfo.value)
+    assert worksheet.cleared == []
+    assert worksheet.region_updates == []
+    assert worksheet.panel_updates == []
+
+
+def test_refresh_still_runs_when_the_tab_already_holds_the_layout_headers() -> None:
+    spreadsheet = FakeSpreadsheet()
+    worksheet = FakeWorksheet("2026-11")
+    _store_headers(worksheet, EXPENSE_HEADERS)
+    spreadsheet.sheets["2026-11"] = worksheet
+    writer, _ = _writer(spreadsheet)
+
+    writer.write(
+        document_id="doc",
+        tab_name="2026-11",
+        transactions=[_expense()],
+        balances=[_balance()],
+    )
+
+    assert EXPENSE_REGION in worksheet.cleared
+    assert worksheet.region_updates != []
+
+
+def test_refresh_accepts_an_existing_but_empty_tab() -> None:
+    spreadsheet = FakeSpreadsheet()
+    worksheet = FakeWorksheet("2026-11")
+    spreadsheet.sheets["2026-11"] = worksheet
+    writer, _ = _writer(spreadsheet)
+
+    writer.write(
+        document_id="doc",
+        tab_name="2026-11",
+        transactions=[_expense()],
+        balances=[_balance()],
+    )
+
+    assert EXPENSE_REGION in worksheet.cleared

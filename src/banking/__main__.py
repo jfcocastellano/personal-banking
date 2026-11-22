@@ -36,7 +36,7 @@ def main() -> None:
         print("  secrets   Manage encrypted configuration secrets")
         print("  sync      Fetch this month's movements from all four banks and write to Sheets")
         print("  daily     Fetch once per bank and write both the raw and layout tabs")
-        print("  layout    Generate the monthly accounting layout tab (<YYYY-MM> Gastos)")
+        print("  layout    Generate the monthly accounting layout tab (<YYYY-MM>)")
         print()
         print("Run 'banking <command> --help' for more information.")
         sys.exit(0)
