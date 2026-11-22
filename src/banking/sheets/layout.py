@@ -45,6 +45,7 @@ class RawTabCollisionError(Exception):
     one the owner is still migrating, and clearing it would destroy the raw rows.
     """
 
+
 # Writes one cell into the grid under construction: (row, column, value).
 Place = Callable[[int, int, CellValue], None]
 

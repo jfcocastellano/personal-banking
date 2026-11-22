@@ -605,8 +605,6 @@ def test_run_daily_one_success_and_one_failure_is_partial_and_writes_both_tabs()
     assert len(layout_writer.calls) == 1
 
 
-
-
 def test_run_daily_balance_failure_keeps_movements_and_writes_an_empty_balance_row() -> None:
     connector = _FakeConnector(
         "Revolut",
@@ -683,5 +681,3 @@ def _transaction_on(booking_date: date, description: str, amount: str) -> Transa
         currency="EUR",
         description=description,
     )
-
-
