@@ -10,7 +10,21 @@ them touches the document.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import Any
+
+from banking.sheets.layout import (
+    _BALANCE_FIRST_ROW,
+    _BALANCE_HEADER_ROW,
+    _BALANCE_TITLE_ROW,
+    _COL_J,
+    _COL_K,
+    _HEADER_ROW,
+    _SUMMARY_FIRST_ROW,
+    _SUMMARY_PANEL_LAST_ROW,
+    _SUMMARY_TOTAL_ROW,
+    _TITLE_ROW,
+)
 
 ARIAL = "Arial"
 BODY_SIZE = 12
@@ -18,6 +32,8 @@ AMOUNT_FORMAT = "#,##0.00 _€"
 
 RED = {"red": 1.0, "green": 0.0, "blue": 0.0}
 GREEN = {"red": 0.34, "green": 0.82, "blue": 0.31}
+BLUE = {"red": 0.33, "green": 0.55, "blue": 0.83}
+ORANGE = {"red": 0.98, "green": 0.75, "blue": 0.56}
 WHITE = {"red": 1.0, "green": 1.0, "blue": 1.0}
 
 _ROW_HEIGHT = 12.75
@@ -148,7 +164,78 @@ def format_requests(sheet_id: int) -> list[dict[str, Any]]:
             _cell_format(bold=True, halign="CENTER", number_format=AMOUNT_FORMAT),
         )
     )
+    requests.extend(_right_hand_panel(sheet_id))
     return requests
+
+
+def _right_hand_panel(sheet_id: int) -> list[dict[str, Any]]:
+    """The ``J:K`` column: income band, month summary and account balances.
+
+    Row and column boundaries come from ``layout.py`` so the bands follow what the
+    writer owns. Those constants are 0-based; ``_repeat`` takes 1-based columns.
+    """
+    j, k = _COL_J + 1, _COL_K + 1
+    return [
+        _repeat(
+            sheet_id,
+            _TITLE_ROW,
+            _TITLE_ROW,
+            j,
+            k,
+            _cell_format(background=GREEN, bold=True, halign="CENTER"),
+        ),
+        _repeat(
+            sheet_id,
+            _HEADER_ROW,
+            _HEADER_ROW,
+            j,
+            k,
+            _cell_format(background=GREEN, bold=True, color=WHITE, halign="CENTER"),
+        ),
+        _repeat(
+            sheet_id,
+            _SUMMARY_FIRST_ROW,
+            _SUMMARY_TOTAL_ROW,
+            j,
+            k,
+            _cell_format(background=BLUE, bold=True),
+        ),
+        _repeat(
+            sheet_id,
+            _SUMMARY_FIRST_ROW,
+            _SUMMARY_TOTAL_ROW,
+            k,
+            k,
+            _cell_format(background=BLUE, bold=True, halign="CENTER", number_format=AMOUNT_FORMAT),
+        ),
+        _repeat(
+            sheet_id,
+            _BALANCE_TITLE_ROW,
+            _BALANCE_TITLE_ROW,
+            j,
+            k,
+            _cell_format(background=ORANGE, bold=True, halign="CENTER"),
+        ),
+        _repeat(
+            sheet_id,
+            _BALANCE_HEADER_ROW,
+            _BALANCE_HEADER_ROW,
+            j,
+            k,
+            _cell_format(background=ORANGE, bold=True, color=WHITE, halign="CENTER"),
+        ),
+        _repeat(
+            sheet_id, _BALANCE_FIRST_ROW, _SUMMARY_PANEL_LAST_ROW, j, k, _cell_format(bold=True)
+        ),
+        _repeat(
+            sheet_id,
+            _BALANCE_FIRST_ROW,
+            _SUMMARY_PANEL_LAST_ROW,
+            k,
+            k,
+            _cell_format(bold=True, halign="CENTER", number_format=AMOUNT_FORMAT),
+        ),
+    ]
 
 
 def row_height_requests(sheet_id: int, rows: int) -> list[dict[str, Any]]:
@@ -167,3 +254,11 @@ def row_height_requests(sheet_id: int, rows: int) -> list[dict[str, Any]]:
             }
         }
     ]
+
+
+def indent_requests(
+    sheet_id: int, rows: Sequence[int], column: int, points: float = 12.0
+) -> list[dict[str, Any]]:
+    """Indent single-column cells, like the ledger's tabulated sub-items."""
+    fmt: dict[str, Any] = {"padding": {"left": points}}
+    return [_repeat(sheet_id, row, row, column, column, fmt) for row in rows]
