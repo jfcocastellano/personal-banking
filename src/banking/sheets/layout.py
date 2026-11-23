@@ -317,13 +317,6 @@ def _expense_rows(transactions: Sequence[ExpenseRow]) -> list[list[CellValue]]:
     return [_expense_row(transaction) for transaction in sorted(transactions, key=_sort_key)]
 
 
-def _reference_label(balances: Sequence[AccountBalance]) -> str:
-    dates = [balance.reference_date for balance in balances if balance.reference_date is not None]
-    if not dates:
-        return _NO_REFERENCE_DATE
-    return max(dates).isoformat()
-
-
 def _materialize(cells: dict[int, list[CellValue]], last_row: int) -> list[list[CellValue]]:
     grid: list[list[CellValue]] = []
     for row in range(1, last_row + 1):
@@ -428,9 +421,8 @@ def _place_balances(place: Place, balances: Sequence[AccountBalance]) -> None:
         # the range stays stable when the user later types one in by hand.
         place(total_row, _COL_K, f"=SUM(K{_BALANCE_FIRST_ROW}:K{total_row - 1})")
 
-    reference_row = total_row + 1
-    place(reference_row, _COL_J, "Saldos al")
-    place(reference_row, _COL_K, _reference_label(balances))
+    # The reference date used to sit under the total as its own row; the owner asked
+    # for the total to be the last row of the block, so nothing is written below it.
 
 
 def _resolve_layout_worksheet(

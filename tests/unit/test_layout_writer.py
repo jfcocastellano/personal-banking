@@ -424,7 +424,7 @@ def test_second_run_rewrites_the_panel_with_user_entered_so_formulas_evaluate() 
     assert rows[BALANCE_TITLE_ROW - SUMMARY_FIRST_ROW] == ["SALDO CUENTAS", None]
     assert rows[BALANCE_FIRST_ROW - SUMMARY_FIRST_ROW] == ["ING España", 1234.5]
     assert rows[BALANCE_FIRST_ROW - SUMMARY_FIRST_ROW + 1] == ["Total", "=SUM(K10:K10)"]
-    assert rows[BALANCE_FIRST_ROW - SUMMARY_FIRST_ROW + 2] == ["Saldos al", "2026-08-31"]
+    assert rows[BALANCE_FIRST_ROW - SUMMARY_FIRST_ROW + 2] == [None, None]
     assert rows[-1] == [None, None]
 
 
@@ -479,7 +479,7 @@ def test_panel_that_shrank_clears_the_rows_of_dropped_accounts() -> None:
     )
     # The new panel ends at its own reference date; the rest is blank.
     new_reference_row = BALANCE_FIRST_ROW + 2 + 1
-    assert sheet.cells[(new_reference_row, 10)] == "Saldos al"
+    assert (new_reference_row, 10) not in sheet.cells
     assert all(
         (row, column) not in sheet.cells
         for row in range(new_reference_row + 1, SUMMARY_LAST_ROW + 1)

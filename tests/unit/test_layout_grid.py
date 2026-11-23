@@ -203,7 +203,7 @@ def test_exactly_the_row_ceiling_is_accepted_up_to_row_403() -> None:
     assert _cell(grid, 403, B) == "2026-08-01"
 
 
-def test_balance_rows_keep_the_supplied_order_and_end_with_total_and_reference() -> None:
+def test_balance_rows_keep_the_supplied_order_and_end_with_the_total() -> None:
     balances = [
         AccountBalance(
             bank="ING España", amount=Decimal("1234.50"), reference_date=date(2026, 8, 31)
@@ -226,8 +226,8 @@ def test_balance_rows_keep_the_supplied_order_and_end_with_total_and_reference()
     total_row = BALANCE_TITLE_ROW + 4
     assert _cell(grid, total_row, J) == "Total"
     assert _cell(grid, total_row, K) == "=SUM(K10:K11)"
-    assert _cell(grid, total_row + 1, J) == "Saldos al"
-    assert _cell(grid, total_row + 1, K) == "2026-08-31"
+    assert _cell(grid, total_row + 1, J) is None
+    assert _cell(grid, total_row + 1, K) is None
     assert len(grid) == CATEGORY_TOTAL_ROW
 
 
@@ -262,7 +262,7 @@ def test_all_balances_missing_leave_cells_empty_but_keep_the_total_range() -> No
     assert _cell(grid, BALANCE_TITLE_ROW + 2, K) is None
 
 
-def test_reference_date_row_reports_the_most_recent_date() -> None:
+def test_nothing_is_written_below_the_total_row() -> None:
     balances = [
         AccountBalance(bank="ING España", amount=Decimal("1.00"), reference_date=date(2026, 8, 29)),
         AccountBalance(bank="Revolut", amount=Decimal("2.00"), reference_date=date(2026, 8, 31)),
@@ -272,11 +272,11 @@ def test_reference_date_row_reports_the_most_recent_date() -> None:
     grid = build_month_grid([], balances)
 
     reference_row = BALANCE_TITLE_ROW + 2 + len(balances) + 1
-    assert _cell(grid, reference_row, J) == "Saldos al"
-    assert _cell(grid, reference_row, K) == "2026-08-31"
+    assert _cell(grid, reference_row, J) is None
+    assert _cell(grid, reference_row, K) is None
 
 
-def test_reference_date_row_without_any_date_says_so() -> None:
+def test_nothing_is_written_below_the_total_row_without_dates() -> None:
     balances = [
         AccountBalance(bank="ING España", amount=Decimal("1.00")),
         AccountBalance(bank="Revolut", amount=None, reference_date=None),
@@ -285,8 +285,8 @@ def test_reference_date_row_without_any_date_says_so() -> None:
     grid = build_month_grid([], balances)
 
     reference_row = BALANCE_TITLE_ROW + 2 + len(balances) + 1
-    assert _cell(grid, reference_row, J) == "Saldos al"
-    assert _cell(grid, reference_row, K) == "sin dato de referencia"
+    assert _cell(grid, reference_row, J) is None
+    assert _cell(grid, reference_row, K) is None
 
 
 def test_balance_panel_exists_even_without_balances() -> None:
@@ -296,8 +296,8 @@ def test_balance_panel_exists_even_without_balances() -> None:
     assert _cell(grid, BALANCE_TITLE_ROW + 1, J) == "CUENTA"
     assert _cell(grid, BALANCE_TITLE_ROW + 2, J) == "Total"
     assert _cell(grid, BALANCE_TITLE_ROW + 2, K) is None
-    assert _cell(grid, BALANCE_TITLE_ROW + 3, J) == "Saldos al"
-    assert _cell(grid, BALANCE_TITLE_ROW + 3, K) == "sin dato de referencia"
+    assert _cell(grid, BALANCE_TITLE_ROW + 3, J) is None
+    assert _cell(grid, BALANCE_TITLE_ROW + 3, K) is None
 
 
 def test_every_formula_is_a_string_starting_with_equals() -> None:
