@@ -17,6 +17,7 @@ from banking.sheets.layout import (
     _BALANCE_FIRST_ROW,
     _BALANCE_HEADER_ROW,
     _BALANCE_TITLE_ROW,
+    _COL_G,
     _COL_J,
     _COL_K,
     _HEADER_ROW,
@@ -268,3 +269,60 @@ def indent_requests(
     """Indent single-column cells, like the ledger's tabulated sub-items."""
     fmt: dict[str, Any] = {"padding": {"left": points}}
     return [_repeat(sheet_id, row, row, column, column, fmt) for row in rows]
+
+
+def layout_requests(sheet_id: int, *, column_count: int) -> list[dict[str, Any]]:
+    """Structural touches that are not pure cell formatting.
+
+    Merges the balances title so it centres across ``J:K`` like the other two titles,
+    fits the two text columns to their longest entry, and leaves one empty column on the
+    far right. The trailing column is only inserted while the sheet still ends at ``K``,
+    so running this twice does not keep appending columns.
+    """
+    j, k = _COL_J + 1, _COL_K + 1
+    requests: list[dict[str, Any]] = [
+        {
+            "mergeCells": {
+                "range": {
+                    "sheetId": sheet_id,
+                    "startRowIndex": _BALANCE_TITLE_ROW - 1,
+                    "endRowIndex": _BALANCE_TITLE_ROW,
+                    "startColumnIndex": _COL_J,
+                    "endColumnIndex": _COL_K + 1,
+                },
+                "mergeType": "MERGE_ROWS",
+            }
+        },
+        _repeat(
+            sheet_id,
+            _BALANCE_TITLE_ROW,
+            _BALANCE_TITLE_ROW,
+            j,
+            k,
+            _cell_format(background=LIGHT_BLUE, bold=True, halign="CENTER"),
+        ),
+    ]
+    for column in (_COL_G, _COL_J):
+        requests.append(
+            {
+                "autoResizeDimensions": {
+                    "dimensions": {
+                        "sheetId": sheet_id,
+                        "dimension": "COLUMNS",
+                        "startIndex": column,
+                        "endIndex": column + 1,
+                    }
+                }
+            }
+        )
+    if column_count <= _COL_K + 1:
+        requests.append(
+            {
+                "appendDimension": {
+                    "sheetId": sheet_id,
+                    "dimension": "COLUMNS",
+                    "length": 1,
+                }
+            }
+        )
+    return requests
