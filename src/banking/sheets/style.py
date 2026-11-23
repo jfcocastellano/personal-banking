@@ -145,7 +145,7 @@ def format_requests(sheet_id: int) -> list[dict[str, Any]]:
     requests.extend(
         _block(
             sheet_id,
-            accent=GREEN,
+            accent=ORANGE,
             title_row=2,
             header_row=3,
             first_row=4,
@@ -198,7 +198,7 @@ def _right_hand_panel(sheet_id: int) -> list[dict[str, Any]]:
             _SUMMARY_TOTAL_ROW,
             j,
             k,
-            _cell_format(background=BLUE, bold=True),
+            _cell_format(background=WHITE, bold=True),
         ),
         _repeat(
             sheet_id,
@@ -206,7 +206,7 @@ def _right_hand_panel(sheet_id: int) -> list[dict[str, Any]]:
             _SUMMARY_TOTAL_ROW,
             k,
             k,
-            _cell_format(background=BLUE, bold=True, halign="CENTER", number_format=AMOUNT_FORMAT),
+            _cell_format(background=WHITE, bold=True, halign="CENTER", number_format=AMOUNT_FORMAT),
         ),
         _repeat(
             sheet_id,
@@ -257,7 +257,7 @@ def row_height_requests(sheet_id: int, rows: int) -> list[dict[str, Any]]:
 
 
 def indent_requests(
-    sheet_id: int, rows: Sequence[int], column: int, points: float = 12.0
+    sheet_id: int, rows: Sequence[int], column: int, points: float = 24.0
 ) -> list[dict[str, Any]]:
     """Indent single-column cells, like the ledger's tabulated sub-items."""
     fmt: dict[str, Any] = {"padding": {"left": points}}
