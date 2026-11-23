@@ -34,6 +34,7 @@ RED = {"red": 1.0, "green": 0.0, "blue": 0.0}
 GREEN = {"red": 0.34, "green": 0.82, "blue": 0.31}
 BLUE = {"red": 0.33, "green": 0.55, "blue": 0.83}
 ORANGE = {"red": 0.98, "green": 0.75, "blue": 0.56}
+LIGHT_BLUE = {"red": 0.74, "green": 0.84, "blue": 0.93}
 WHITE = {"red": 1.0, "green": 1.0, "blue": 1.0}
 
 _ROW_HEIGHT = 12.75
@@ -214,7 +215,7 @@ def _right_hand_panel(sheet_id: int) -> list[dict[str, Any]]:
             _BALANCE_TITLE_ROW,
             j,
             k,
-            _cell_format(background=ORANGE, bold=True, halign="CENTER"),
+            _cell_format(background=LIGHT_BLUE, bold=True, halign="CENTER"),
         ),
         _repeat(
             sheet_id,
@@ -222,10 +223,15 @@ def _right_hand_panel(sheet_id: int) -> list[dict[str, Any]]:
             _BALANCE_HEADER_ROW,
             j,
             k,
-            _cell_format(background=ORANGE, bold=True, color=WHITE, halign="CENTER"),
+            _cell_format(background=LIGHT_BLUE, bold=True, halign="CENTER"),
         ),
         _repeat(
-            sheet_id, _BALANCE_FIRST_ROW, _SUMMARY_PANEL_LAST_ROW, j, k, _cell_format(bold=True)
+            sheet_id,
+            _BALANCE_FIRST_ROW,
+            _SUMMARY_PANEL_LAST_ROW,
+            j,
+            k,
+            _cell_format(bold=True, halign="CENTER"),
         ),
         _repeat(
             sheet_id,
