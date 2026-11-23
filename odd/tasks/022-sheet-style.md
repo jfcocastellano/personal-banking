@@ -93,3 +93,81 @@ vieja, con el dueño rellenando una pestaña que el proceso ya no toca. Renombra
 
 Octubre sigue con el par crudo/layout. Ninguna de las dos la escribe ya el código: funciona
 como archivo y así está bien.
+
+## Reestructuración del panel derecho (pedida el 2026-11-22)
+
+Hoy `J4:K6` no es una tabla de ingresos: son las tres filas del resumen
+(`Ingresos` / `Gastos` / `Total`). La petición es separarlas en dos tablas apiladas.
+
+**Tabla 1 — INGRESOS**, siete filas fijas, una por concepto:
+
+    Nómina, Acciones IB, Dividendos IB, Opciones IB, Intereses IB, MyInvestor, Parking
+
+**Tabla 2 — RESUMEN MES**, con título, cabecera `CONCEPTO` / `CANTIDAD` y:
+
+    Ingresos totales    = importe
+    Gastos míos         = importe
+    Gastos comunes      = importe
+    (línea en blanco)
+    Total               = importe
+
+La aritmética del ejemplo del dueño cierra con **Total = Ingresos − Gastos míos −
+Gastos comunes**: `368,39 − 1735,98 − 800,00 = −2167,59`. Eso fija el signo de los
+gastos: se muestran en positivo y se restan, no se suman negativos.
+
+Fórmulas deducibles de las que ya existen en `layout.py`:
+
+- Ingresos totales → `_INCOME_FORMULA` (`SUMIF(...,">0",...)`)
+- Gastos míos → `-SUMIF(...,"<0",...)`, el negativo de `_SPEND_FORMULA`
+- Gastos comunes → `_SHARED_TOTAL_FORMULA` (`=SUM(H4:H52)`, hoy vive en `H53`)
+- Total → suma y resta de las tres celdas de arriba
+
+**Geometría**: las siete filas de ingresos ocupan hoy el sitio del resumen, así que el
+bloque `RESUMEN MES` y el de `SALDO CUENTAS` bajan. Hay que rehacer las constantes
+`_SUMMARY_*`, `_BALANCE_*` y `_summary_panel_last_row`, y con ellas el panel de limpieza
+del escritor.
+
+**Dos preguntas abiertas antes de tocar código**:
+
+1. Los importes de las siete filas de ingresos, ¿se rellenan a mano o los calcula una
+   fórmula? No hay transacción bancaria que distinga "Dividendos IB" de "Opciones IB".
+2. `Ingresos totales`, ¿es la suma de esas siete filas, o el `SUMIF` de la columna de
+   importes de gastos? Si las siete se rellenan a mano, sumarlas es lo coherente; si no,
+   el `SUMIF` puede contar ingresos que no estén en ninguna de las siete.
+
+### Respuestas del dueño
+
+1. Las siete filas de ingresos van **a mano**.
+2. `Ingresos totales` = **suma de esas siete filas** (`SUM(K4:K10)`), no el `SUMIF` de la
+   columna de importes. Si una fila queda vacía, el total no la cuenta.
+
+### Geometría propuesta (pendiente de implementar)
+
+| Filas | Contenido |
+|-------|-----------|
+| 2-3 | `INGRESOS` (título, merge `J:K`) + cabecera `CONCEPTO`/`CANTIDAD` |
+| 4-10 | las siete filas de ingreso, importes a mano en `K` |
+| 11 | en blanco |
+| 12 | `RESUMEN MES` (título, merge `J:K`) |
+| 13 | cabecera `CONCEPTO` / `CANTIDAD` |
+| 14 | Ingresos totales → `=SUM(K4:K10)` |
+| 15 | Gastos míos → `=-SUMIF($E$4:$E$403,"<0",$E$4:$E$403)` |
+| 16 | Gastos comunes → `=H53` |
+| 17 | en blanco |
+| 18 | Total → `=K14-K15-K16` |
+| 20 | `SALDO CUENTAS` (título, merge `J:K`) |
+| 21 | cabecera `CUENTA` / `SALDO` |
+| 22-29 | hasta ocho cuentas |
+| 30 | Total de saldos |
+
+Constantes a rehacer en `layout.py`: `_SUMMARY_FIRST_ROW`, `_SUMMARY_EXPENSE_ROW`,
+`_SUMMARY_TOTAL_ROW`, `_BALANCE_TITLE_ROW`, `_BALANCE_HEADER_ROW`, `_BALANCE_FIRST_ROW`,
+`_summary_panel_last_row` y `_SUMMARY_PANEL_LAST_ROW`. Con ellas se mueven el panel de
+limpieza del escritor, el rango de formato de `style.py` (`_right_hand_panel`) y las
+aserciones de `test_layout_grid.py` / `test_layout_writer.py`.
+
+La fila `Saldos al` ya no existe (eliminada en `d7cf77b`), así que el Total de saldos
+cierra el panel.
+
+Efecto colateral bueno: el `#ERROR!` de la celda `Total` del resumen
+(`=K4+K5`) desaparece al reescribirse esa fórmula como `=K14-K15-K16`.
