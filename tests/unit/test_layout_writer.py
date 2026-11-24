@@ -2,9 +2,10 @@
 
 The fake worksheet is a guard as much as a recorder: on an existing tab it
 refuses any write or clear outside the expense block ``B3:E403`` and the
-summary/balances panel ``J4:K19``, and it refuses a second full-sheet write.
+summary/balances panel ``J12:K30``, and it refuses a second full-sheet write.
 Those are exactly the properties that protect hand-typed shared amounts in
-``G:H`` (spec FR-009) while letting the panel refresh (FR-004).
+``G:H`` and hand-typed income amounts in ``K4:K10`` (spec FR-009) while letting
+the panel refresh (FR-004).
 """
 
 import logging
@@ -31,16 +32,29 @@ EXPENSE_REGION = "B3:E403"
 EXPENSE_HEADERS = ["FECHA", "BANCO", "DESCRIPCIÓN", "IMPORTE"]
 MONEY_FORMAT = {"numberFormat": {"type": "NUMBER", "pattern": '#,##0.00 "€"'}}
 BOLD = {"textFormat": {"bold": True}}
-BALANCE_TITLE_ROW = 8
-BALANCE_FIRST_ROW = 10
-SUMMARY_FIRST_ROW = 4
+INCOME_TITLE_ROW = 2
+INCOME_FIRST_ROW = 4
+INCOME_LAST_ROW = 10
+SUMMARY_TITLE_ROW = 12
+SUMMARY_HEADER_ROW = 13
+SUMMARY_INCOME_ROW = 14
+SUMMARY_EXPENSE_ROW = 15
+SUMMARY_SHARED_ROW = 16
+SUMMARY_TOTAL_ROW = 18
+BALANCE_TITLE_ROW = 20
+BALANCE_HEADER_ROW = 21
+BALANCE_FIRST_ROW = 22
 # Fixed floor the update path clears: four connectors today, eight slots in the
 # panel, so a panel that shrank never leaves a stale row behind.
-SUMMARY_LAST_ROW = 19
-SUMMARY_CLEAR = f"J{SUMMARY_FIRST_ROW}:K{SUMMARY_LAST_ROW}"
-SUMMARY_WRITE = f"J{SUMMARY_FIRST_ROW}"
-INCOME_FORMULA = '=SUMIF($E$4:$E$403,">0",$E$4:$E$403)'
-SPEND_FORMULA = '=SUMIF($E$4:$E$403,"<0",$E$4:$E$403)'
+SUMMARY_LAST_ROW = 30
+SUMMARY_CLEAR = f"J{SUMMARY_TITLE_ROW}:K{SUMMARY_LAST_ROW}"
+SUMMARY_WRITE = f"J{SUMMARY_TITLE_ROW}"
+# A tab still in the pre-022 geometry is reset once from the income title down.
+INCOME_RESET_CLEAR = f"J{INCOME_TITLE_ROW}:K{SUMMARY_LAST_ROW}"
+INCOME_RESET_WRITE = f"J{INCOME_TITLE_ROW}"
+INCOME_TOTAL_FORMULA = "=SUM(K4:K10)"
+OWN_EXPENSE_FORMULA = '=-SUMIF($E$4:$E$403,"<0",$E$4:$E$403)'
+SUMMARY_TOTAL_FORMULA = "=K14-K15-K16"
 
 
 class FakeWorksheet:
@@ -100,15 +114,16 @@ class FakeWorksheet:
             self._store(1, 1, rows)
             return
 
-        if range_name == SUMMARY_WRITE:
+        if range_name in (SUMMARY_WRITE, INCOME_RESET_WRITE):
             if any(len(row) != 2 for row in rows):
                 raise AssertionError(
                     f"summary write must be exactly columns J and K: {range_name!r}"
                 )
+            first_row = int(range_name[1:])
             self.panel_updates.append(rows)
             self.panel_ranges.append(range_name)
             self.panel_raw_flags.append(raw)
-            self._store(SUMMARY_FIRST_ROW, 10, rows)
+            self._store(first_row, 10, rows)
             return
 
         if not range_name.startswith("B3"):
@@ -132,8 +147,11 @@ class FakeWorksheet:
             if panel is None:
                 raise AssertionError(f"clear outside the writable regions: {range_name!r}")
             first_row, last_row = int(panel.group(1)), int(panel.group(2))
-            if first_row != SUMMARY_FIRST_ROW:
-                raise AssertionError(f"summary clear must start at J4: {range_name!r}")
+            if first_row not in (INCOME_TITLE_ROW, SUMMARY_TITLE_ROW):
+                raise AssertionError(
+                    f"panel clear must start at J{INCOME_TITLE_ROW} or "
+                    f"J{SUMMARY_TITLE_ROW}: {range_name!r}"
+                )
             self.cleared.append(range_name)
             self._delete(first_row, last_row, 10, 11)
 
@@ -252,7 +270,7 @@ def test_creation_writes_every_block_and_applies_formatting() -> None:
     assert sheet.cells[(3, 2)] == "FECHA"
     assert sheet.cells[(3, 4)] == "DESCRIPCIÓN"
     assert sheet.cells[(3, 8)] == "TOTAL"
-    assert sheet.cells[(3, 11)] == "IMPORTE"
+    assert sheet.cells[(3, 11)] == "CANTIDAD"
 
     assert sheet.cells[(4, 2)] == "2026-08-01"
     assert sheet.cells[(4, 3)] == "ING España"
@@ -264,9 +282,17 @@ def test_creation_writes_every_block_and_applies_formatting() -> None:
     assert sheet.cells[(53, 7)] == "Total"
     assert sheet.cells[(53, 8)] == "=SUM(H4:H52)"
 
-    assert sheet.cells[(4, 10)] == "Ingresos"
-    assert sheet.cells[(4, 11)] == '=SUMIF($E$4:$E$403,">0",$E$4:$E$403)'
-    assert sheet.cells[(6, 11)] == "=K4+K5"
+    assert sheet.cells[(4, 10)] == "Nómina"
+    assert sheet.cells[(10, 10)] == "Parking"
+    assert sheet.cells.get((4, 11)) is None  # income amounts are typed by the owner
+
+    assert sheet.cells[(SUMMARY_TITLE_ROW, 10)] == "RESUMEN MES"
+    assert sheet.cells[(SUMMARY_HEADER_ROW, 10)] == "CONCEPTO"
+    assert sheet.cells[(SUMMARY_HEADER_ROW, 11)] == "CANTIDAD"
+    assert sheet.cells[(SUMMARY_INCOME_ROW, 10)] == "Ingresos totales"
+    assert sheet.cells[(SUMMARY_INCOME_ROW, 11)] == "=SUM(K4:K10)"
+    assert sheet.cells[(SUMMARY_SHARED_ROW, 11)] == "=H53"
+    assert sheet.cells[(SUMMARY_TOTAL_ROW, 11)] == "=K14-K15-K16"
 
     assert sheet.cells[(BALANCE_TITLE_ROW, 10)] == "SALDO CUENTAS"
     assert sheet.cells[(BALANCE_FIRST_ROW, 10)] == "ING España"
@@ -282,19 +308,20 @@ def test_creation_applies_bold_titles_headers_and_money_formats() -> None:
 
     sheet = spreadsheet.sheets["2026-08 Gastos"]
     # The exact creation-time ranges, in the order they are applied. The money
-    # format over the panel is the one the refresh uses (J4:K19 floor), so the
-    # summary totals K4:K6 look like money from the first run on.
+    # format over the panel is the one the refresh uses (K4:K30 floor), so the
+    # summary totals look like money from the first run on and so do hand-typed
+    # income amounts.
     assert sheet.formats == [
         ("B2:K2", BOLD),
         ("B3:K3", BOLD),
         ("E4:E403", MONEY_FORMAT),
         ("H4:H53", MONEY_FORMAT),
-        (f"K{SUMMARY_FIRST_ROW}:K{SUMMARY_LAST_ROW}", MONEY_FORMAT),
+        (f"K{INCOME_FIRST_ROW}:K{SUMMARY_LAST_ROW}", MONEY_FORMAT),
     ]
     formatted_ranges = [name for name, _format in sheet.formats]
-    # The balances-only range creation used to format (K10:K11 here) left the
+    # The balances-only range creation used to format (K22:K23 here) left the
     # summary cells unformatted until a refresh; it must not come back.
-    assert not any(name.startswith("K10:K") for name in formatted_ranges)
+    assert not any(name.startswith("K22:K") for name in formatted_ranges)
     # Only formatting ranges are used, never a whole-sheet clear/format.
     assert "A1:K403" not in formatted_ranges
 
@@ -308,19 +335,19 @@ def test_creation_formats_a_panel_taller_than_the_fixed_floor() -> None:
     writer.write("doc-1", "2026-08 Gastos", [_expense()], balances)
 
     sheet = spreadsheet.sheets["2026-08 Gastos"]
-    # Nine balances put the reference date on row 20, past the fixed floor of
-    # 19, so the range has to grow with the panel instead of being hardcoded.
-    assert (f"K{SUMMARY_FIRST_ROW}:K{SUMMARY_LAST_ROW + 1}", MONEY_FORMAT) in sheet.formats
+    # Nine balances put the total on row 31, past the fixed floor of 30, so the
+    # range has to grow with the panel instead of being hardcoded.
+    assert (f"K{INCOME_FIRST_ROW}:K{SUMMARY_LAST_ROW + 1}", MONEY_FORMAT) in sheet.formats
 
 
-def test_creation_merges_the_three_title_ranges() -> None:
+def test_creation_merges_the_five_title_ranges() -> None:
     spreadsheet = FakeSpreadsheet()
     writer, _client = _writer(spreadsheet)
 
     writer.write("doc-1", "2026-08 Gastos", [_expense()], [_balance()])
 
     sheet = spreadsheet.sheets["2026-08 Gastos"]
-    assert sheet.merged == ["B2:E2", "G2:H2", "J2:K2"]
+    assert sheet.merged == ["B2:E2", "G2:H2", "J2:K2", "J12:K12", "J20:K20"]
 
 
 def test_creation_with_an_empty_month_also_merges_the_titles() -> None:
@@ -329,7 +356,13 @@ def test_creation_with_an_empty_month_also_merges_the_titles() -> None:
 
     writer.write("doc-1", "2026-08 Gastos", [], [])
 
-    assert spreadsheet.sheets["2026-08 Gastos"].merged == ["B2:E2", "G2:H2", "J2:K2"]
+    assert spreadsheet.sheets["2026-08 Gastos"].merged == [
+        "B2:E2",
+        "G2:H2",
+        "J2:K2",
+        "J12:K12",
+        "J20:K20",
+    ]
 
 
 def test_creation_merges_after_the_grid_write_and_keeps_the_title_text() -> None:
@@ -339,7 +372,7 @@ def test_creation_merges_after_the_grid_write_and_keeps_the_title_text() -> None
     writer.write("doc-1", "2026-08 Gastos", [], [])
 
     sheet = spreadsheet.sheets["2026-08 Gastos"]
-    assert sheet.merged == ["B2:E2", "G2:H2", "J2:K2"]
+    assert sheet.merged == ["B2:E2", "G2:H2", "J2:K2", "J12:K12", "J20:K20"]
     assert sheet.cells[(2, 2)] == "GASTOS"
     assert sheet.cells[(2, 7)] == "GASTOS COMUNES"
     assert sheet.cells[(2, 10)] == "INGRESOS"
@@ -358,7 +391,7 @@ def test_update_never_merges_again() -> None:
 
     writer.write("doc-1", "2026-08 Gastos", [_expense(day=2)], [_balance()])
 
-    assert creation_merges == ["B2:E2", "G2:H2", "J2:K2"]
+    assert creation_merges == ["B2:E2", "G2:H2", "J2:K2", "J12:K12", "J20:K20"]
     assert sheet.merged == creation_merges
     assert sheet.cleared == [EXPENSE_REGION, EXPENSE_REGION, SUMMARY_CLEAR]
 
@@ -396,12 +429,12 @@ def test_second_run_clears_and_rewrites_the_expense_region_and_the_panel() -> No
     assert sheet.cells[(3, 2)] == "FECHA"
     assert sheet.cells[(4, 7)] == "Alimentación"
     assert sheet.cells[(53, 8)] == "=SUM(H4:H52)"
-    assert sheet.cells[(4, 10)] == "Ingresos"
-    assert sheet.cells[(6, 11)] == "=K4+K5"
+    assert sheet.cells[(4, 10)] == "Nómina"  # income table untouched, not rewritten
+    assert sheet.cells[(SUMMARY_TOTAL_ROW, 11)] == "=K14-K15-K16"
     assert sheet.cells[(BALANCE_TITLE_ROW, 10)] == "SALDO CUENTAS"
     # The creation-time formatting survives; the panel adds one money format.
     assert len(sheet.formats) == 6
-    assert (f"K{SUMMARY_FIRST_ROW}:K{SUMMARY_LAST_ROW}", MONEY_FORMAT) in sheet.formats
+    assert (f"K{INCOME_FIRST_ROW}:K{SUMMARY_LAST_ROW}", MONEY_FORMAT) in sheet.formats
 
 
 def test_second_run_rewrites_the_panel_with_user_entered_so_formulas_evaluate() -> None:
@@ -415,16 +448,21 @@ def test_second_run_rewrites_the_panel_with_user_entered_so_formulas_evaluate() 
     assert sheet.panel_ranges == [SUMMARY_WRITE]
     assert sheet.panel_raw_flags == [False]
     rows = sheet.panel_updates[-1]
-    # One row per sheet row from J4 to the fixed panel floor, two columns wide.
-    assert len(rows) == SUMMARY_LAST_ROW - SUMMARY_FIRST_ROW + 1
+    # One row per sheet row from the summary title to the fixed panel floor, two
+    # columns wide. The income table above it is out of this region on purpose.
+    assert len(rows) == SUMMARY_LAST_ROW - SUMMARY_TITLE_ROW + 1
     assert all(len(row) == 2 for row in rows)
-    assert rows[0] == ["Ingresos", INCOME_FORMULA]
-    assert rows[1] == ["Gastos", SPEND_FORMULA]
-    assert rows[2] == ["Total", "=K4+K5"]
-    assert rows[BALANCE_TITLE_ROW - SUMMARY_FIRST_ROW] == ["SALDO CUENTAS", None]
-    assert rows[BALANCE_FIRST_ROW - SUMMARY_FIRST_ROW] == ["ING España", 1234.5]
-    assert rows[BALANCE_FIRST_ROW - SUMMARY_FIRST_ROW + 1] == ["Total", "=SUM(K10:K10)"]
-    assert rows[BALANCE_FIRST_ROW - SUMMARY_FIRST_ROW + 2] == [None, None]
+    assert rows[0] == ["RESUMEN MES", None]
+    assert rows[1] == ["CONCEPTO", "CANTIDAD"]
+    assert rows[2] == ["Ingresos totales", INCOME_TOTAL_FORMULA]
+    assert rows[3] == ["Gastos míos", OWN_EXPENSE_FORMULA]
+    assert rows[4] == ["Gastos comunes", "=H53"]
+    assert rows[5] == [None, None]
+    assert rows[6] == ["Total", SUMMARY_TOTAL_FORMULA]
+    assert rows[BALANCE_TITLE_ROW - SUMMARY_TITLE_ROW] == ["SALDO CUENTAS", None]
+    assert rows[BALANCE_FIRST_ROW - SUMMARY_TITLE_ROW] == ["ING España", 1234.5]
+    assert rows[BALANCE_FIRST_ROW - SUMMARY_TITLE_ROW + 1] == ["Total", "=SUM(K22:K22)"]
+    assert rows[BALANCE_FIRST_ROW - SUMMARY_TITLE_ROW + 2] == [None, None]
     assert rows[-1] == [None, None]
 
 
@@ -446,7 +484,7 @@ def test_second_run_with_different_balances_changes_the_panel_values() -> None:
     assert sheet.cells[(BALANCE_FIRST_ROW, 11)] == 77.25
     assert sheet.cells[(BALANCE_FIRST_ROW + 1, 10)] == "Revolut"
     assert sheet.cells[(BALANCE_FIRST_ROW + 1, 11)] == 5.0
-    assert sheet.cells[(BALANCE_FIRST_ROW + 2, 11)] == "=SUM(K10:K11)"
+    assert sheet.cells[(BALANCE_FIRST_ROW + 2, 11)] == "=SUM(K22:K23)"
 
 
 def test_panel_that_shrank_clears_the_rows_of_dropped_accounts() -> None:
@@ -456,7 +494,7 @@ def test_panel_that_shrank_clears_the_rows_of_dropped_accounts() -> None:
     writer.write("doc-1", "2026-08 Gastos", [_expense()], full_panel)
     sheet = spreadsheet.sheets["2026-08 Gastos"]
     old_last_balance_row = BALANCE_FIRST_ROW + len(full_panel) - 1
-    old_last_panel_row = old_last_balance_row + 2  # total, then reference date
+    old_last_panel_row = old_last_balance_row + 1  # the balances total
     assert old_last_panel_row == SUMMARY_LAST_ROW  # the panel filled the floor
     assert sheet.cells[(old_last_balance_row, 10)] == "Banco 8"
 
@@ -469,7 +507,7 @@ def test_panel_that_shrank_clears_the_rows_of_dropped_accounts() -> None:
 
     # The clear range still covers every row the previous panel occupied.
     assert sheet.cleared[-1] == SUMMARY_CLEAR
-    panel_clear = re.fullmatch(r"J4:K(\d+)", sheet.cleared[-1])
+    panel_clear = re.fullmatch(r"J12:K(\d+)", sheet.cleared[-1])
     assert panel_clear is not None
     assert int(panel_clear.group(1)) >= old_last_panel_row
     # Every dropped account is gone, not just the last one.
@@ -477,12 +515,11 @@ def test_panel_that_shrank_clears_the_rows_of_dropped_accounts() -> None:
         not (isinstance(value, str) and value.startswith("Banco "))
         for value in sheet.cells.values()
     )
-    # The new panel ends at its own reference date; the rest is blank.
-    new_reference_row = BALANCE_FIRST_ROW + 2 + 1
-    assert (new_reference_row, 10) not in sheet.cells
+    # The new panel ends at its own total row; the rest is blank.
+    new_total_row = BALANCE_FIRST_ROW + 2
     assert all(
         (row, column) not in sheet.cells
-        for row in range(new_reference_row + 1, SUMMARY_LAST_ROW + 1)
+        for row in range(new_total_row + 1, SUMMARY_LAST_ROW + 1)
         for column in (10, 11)
     )
     assert sheet.cells[(BALANCE_FIRST_ROW, 10)] == "ING España"
@@ -550,17 +587,80 @@ def test_hand_typed_shared_amount_survives_a_second_run() -> None:
     assert "H" not in touched
 
 
-def test_hand_typed_cell_inside_the_panel_is_replaced_by_the_refresh() -> None:
-    """J:K belongs to the sheet: a hand edit there is not preserved (FR-004)."""
+def test_hand_typed_cell_inside_the_summary_panel_is_replaced_by_the_refresh() -> None:
+    """From the summary down, J:K belongs to the sheet: a hand edit is not kept."""
     spreadsheet = FakeSpreadsheet()
     writer, _client = _writer(spreadsheet)
     writer.write("doc-1", "2026-08 Gastos", [_expense()], [])
     sheet = spreadsheet.sheets["2026-08 Gastos"]
-    sheet.cells[(5, 10)] = "Gastos corregido a mano"
+    sheet.cells[(SUMMARY_EXPENSE_ROW, 10)] = "Gastos corregido a mano"
 
     writer.write("doc-1", "2026-08 Gastos", [_expense(day=9)], [_balance()])
 
-    assert sheet.cells[(5, 10)] == "Gastos"
+    assert sheet.cells[(SUMMARY_EXPENSE_ROW, 10)] == "Gastos míos"
+
+
+def test_hand_typed_income_amounts_survive_every_refresh() -> None:
+    """K4:K10 is the owner's data, like the shared model in G:H (FR-009)."""
+    spreadsheet = FakeSpreadsheet()
+    writer, _client = _writer(spreadsheet)
+    writer.write("doc-1", "2026-08 Gastos", [_expense()], [])
+    sheet = spreadsheet.sheets["2026-08 Gastos"]
+    sheet.cells[(INCOME_FIRST_ROW, 11)] = 2500.0  # Nómina
+    sheet.cells[(SUMMARY_INCOME_ROW, 11)] = 3100.0  # the summary total stays calculated
+
+    writer.write("doc-1", "2026-08 Gastos", [_expense(day=9)], [_balance()])
+
+    assert sheet.cells[(INCOME_FIRST_ROW, 11)] == 2500.0
+    assert sheet.cells[(SUMMARY_INCOME_ROW, 11)] == INCOME_TOTAL_FORMULA
+    # No clear or write reaches the income table on a refresh that is already migrated.
+    assert SUMMARY_CLEAR in sheet.cleared
+    assert INCOME_RESET_CLEAR not in sheet.cleared
+    assert sheet.panel_ranges == [SUMMARY_WRITE]
+
+
+def test_a_tab_in_the_old_geometry_is_reset_once_from_the_income_title() -> None:
+    """Migrating must not leave the old summary amounts inside the income rows.
+
+    Before the two-table panel, J4:K6 held the summary and the balances started at
+    row 8. Clearing only from the new summary title would leave those cells behind
+    and read the old totals as hand-typed income, so the first run after the change
+    resets the whole panel. Later runs no longer clear the income table, which is
+    what keeps the owner's amounts.
+    """
+    spreadsheet = FakeSpreadsheet()
+    writer, _client = _writer(spreadsheet)
+    writer.write("doc-1", "2026-08 Gastos", [_expense()], [_balance()])
+    sheet = spreadsheet.sheets["2026-08 Gastos"]
+    # Rebuild the pre-022 shape by hand: summary on 4-6, balances from row 8.
+    for row in range(2, SUMMARY_LAST_ROW + 1):
+        for column in (10, 11):
+            sheet.cells.pop((row, column), None)
+    sheet.cells[(4, 10)] = "Ingresos"
+    sheet.cells[(4, 11)] = '=SUMIF($E$4:$E$403,">0",$E$4:$E$403)'
+    sheet.cells[(8, 10)] = "SALDO CUENTAS"
+    sheet.cells[(10, 10)] = "ING España"
+    sheet.cells[(10, 11)] = 1234.5
+
+    writer.write("doc-1", "2026-08 Gastos", [_expense(day=9)], [_balance()])
+
+    # The stale summary and balance cells inside the income rows are gone.
+    assert sheet.cleared[-1] == INCOME_RESET_CLEAR
+    assert sheet.panel_ranges == [INCOME_RESET_WRITE]
+    assert sheet.cells[(4, 10)] == "Nómina"
+    assert sheet.cells.get((4, 11)) is None
+    assert sheet.cells[(10, 10)] == "Parking"
+    assert sheet.cells.get((10, 11)) is None
+    assert sheet.cells[(SUMMARY_TITLE_ROW, 10)] == "RESUMEN MES"
+    assert sheet.cells[(BALANCE_FIRST_ROW, 10)] == "ING España"
+
+    # The hand-typed amounts of the migrated table then survive the next run.
+    sheet.cells[(INCOME_FIRST_ROW, 11)] = 2500.0
+    writer.write("doc-1", "2026-08 Gastos", [_expense(day=10)], [_balance()])
+
+    assert sheet.cleared[-1] == SUMMARY_CLEAR
+    assert sheet.panel_ranges == [INCOME_RESET_WRITE, SUMMARY_WRITE]
+    assert sheet.cells[(INCOME_FIRST_ROW, 11)] == 2500.0
 
 
 def test_second_run_drops_stale_expense_rows_and_handles_an_empty_month() -> None:

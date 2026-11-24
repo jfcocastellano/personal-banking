@@ -20,11 +20,15 @@ from banking.sheets.layout import (
     _COL_G,
     _COL_J,
     _COL_K,
-    _HEADER_ROW,
-    _SUMMARY_FIRST_ROW,
+    _INCOME_FIRST_ROW,
+    _INCOME_HEADER_ROW,
+    _INCOME_LAST_ROW,
+    _INCOME_TITLE_ROW,
+    _SUMMARY_HEADER_ROW,
+    _SUMMARY_INCOME_ROW,
     _SUMMARY_PANEL_LAST_ROW,
+    _SUMMARY_TITLE_ROW,
     _SUMMARY_TOTAL_ROW,
-    _TITLE_ROW,
 )
 
 ARIAL = "Arial"
@@ -118,10 +122,11 @@ def _block(
 def format_requests(sheet_id: int) -> list[dict[str, Any]]:
     """Requests that paint the month tab the way the ledger workbook looks.
 
-    Covers the two columns blocks whose geometry is fixed by ``layout.py``: expenses
-    (``B:E``, rows 2-403) and shared expenses (``G:H``, rows 2-53). The summary and
-    balance blocks in ``J:K`` are left alone on purpose — their cell positions depend on
-    what the owner has filled in, and a guessed range would repaint his own formatting.
+    Covers every block whose geometry is fixed by ``layout.py``: expenses (``B:E``,
+    rows 2-403), shared expenses (``G:H``, rows 2-53) and the right-hand panel
+    (``J:K``, income table, month summary and balances). The income amounts in
+    ``K4:K10`` are typed by hand, so the panel only paints them; it never writes
+    a value there.
     """
     requests = _block(
         sheet_id,
@@ -171,32 +176,66 @@ def format_requests(sheet_id: int) -> list[dict[str, Any]]:
 
 
 def _right_hand_panel(sheet_id: int) -> list[dict[str, Any]]:
-    """The ``J:K`` column: income band, month summary and account balances.
+    """The ``J:K`` column: income table, month summary and account balances.
 
     Row and column boundaries come from ``layout.py`` so the bands follow what the
     writer owns. Those constants are 0-based; ``_repeat`` takes 1-based columns.
     """
     j, k = _COL_J + 1, _COL_K + 1
     return [
+        # INGRESOS: the income table, green like the expense block.
         _repeat(
             sheet_id,
-            _TITLE_ROW,
-            _TITLE_ROW,
+            _INCOME_TITLE_ROW,
+            _INCOME_TITLE_ROW,
             j,
             k,
             _cell_format(background=GREEN, bold=True, halign="CENTER"),
         ),
         _repeat(
             sheet_id,
-            _HEADER_ROW,
-            _HEADER_ROW,
+            _INCOME_HEADER_ROW,
+            _INCOME_HEADER_ROW,
             j,
             k,
             _cell_format(background=GREEN, bold=True, color=WHITE, halign="CENTER"),
         ),
         _repeat(
             sheet_id,
-            _SUMMARY_FIRST_ROW,
+            _INCOME_FIRST_ROW,
+            _INCOME_LAST_ROW,
+            j,
+            k,
+            _cell_format(background=WHITE, bold=True),
+        ),
+        _repeat(
+            sheet_id,
+            _INCOME_FIRST_ROW,
+            _INCOME_LAST_ROW,
+            k,
+            k,
+            _cell_format(background=WHITE, bold=True, halign="CENTER", number_format=AMOUNT_FORMAT),
+        ),
+        # RESUMEN MES: no accent of its own, as the owner asked.
+        _repeat(
+            sheet_id,
+            _SUMMARY_TITLE_ROW,
+            _SUMMARY_TITLE_ROW,
+            j,
+            k,
+            _cell_format(background=WHITE, bold=True, halign="CENTER"),
+        ),
+        _repeat(
+            sheet_id,
+            _SUMMARY_HEADER_ROW,
+            _SUMMARY_HEADER_ROW,
+            j,
+            k,
+            _cell_format(background=WHITE, bold=True, halign="CENTER"),
+        ),
+        _repeat(
+            sheet_id,
+            _SUMMARY_INCOME_ROW,
             _SUMMARY_TOTAL_ROW,
             j,
             k,
@@ -204,7 +243,7 @@ def _right_hand_panel(sheet_id: int) -> list[dict[str, Any]]:
         ),
         _repeat(
             sheet_id,
-            _SUMMARY_FIRST_ROW,
+            _SUMMARY_INCOME_ROW,
             _SUMMARY_TOTAL_ROW,
             k,
             k,
@@ -232,7 +271,7 @@ def _right_hand_panel(sheet_id: int) -> list[dict[str, Any]]:
             _SUMMARY_PANEL_LAST_ROW,
             j,
             k,
-            _cell_format(bold=True, halign="CENTER"),
+            _cell_format(background=WHITE, bold=True, halign="CENTER"),
         ),
         _repeat(
             sheet_id,
@@ -240,7 +279,7 @@ def _right_hand_panel(sheet_id: int) -> list[dict[str, Any]]:
             _SUMMARY_PANEL_LAST_ROW,
             k,
             k,
-            _cell_format(bold=True, halign="CENTER", number_format=AMOUNT_FORMAT),
+            _cell_format(background=WHITE, bold=True, halign="CENTER", number_format=AMOUNT_FORMAT),
         ),
     ]
 
@@ -274,34 +313,39 @@ def indent_requests(
 def layout_requests(sheet_id: int, *, column_count: int) -> list[dict[str, Any]]:
     """Structural touches that are not pure cell formatting.
 
-    Merges the balances title so it centres across ``J:K`` like the other two titles,
-    fits the two text columns to their longest entry, and leaves one empty column on the
-    far right. The trailing column is only inserted while the sheet still ends at ``K``,
-    so running this twice does not keep appending columns.
+    Merges the two ``J:K`` title bands that sit below the header, so they centre
+    across both columns like the income title, fits the two text columns to their
+    longest entry, and leaves one empty column on the far right. The trailing column
+    is only inserted while the sheet still ends at ``K``, so running this twice does
+    not keep appending columns.
     """
     j, k = _COL_J + 1, _COL_K + 1
-    requests: list[dict[str, Any]] = [
-        {
-            "mergeCells": {
-                "range": {
-                    "sheetId": sheet_id,
-                    "startRowIndex": _BALANCE_TITLE_ROW - 1,
-                    "endRowIndex": _BALANCE_TITLE_ROW,
-                    "startColumnIndex": _COL_J,
-                    "endColumnIndex": _COL_K + 1,
-                },
-                "mergeType": "MERGE_ROWS",
+    requests: list[dict[str, Any]] = []
+    for title_row, accent in ((_SUMMARY_TITLE_ROW, WHITE), (_BALANCE_TITLE_ROW, LIGHT_BLUE)):
+        requests.append(
+            {
+                "mergeCells": {
+                    "range": {
+                        "sheetId": sheet_id,
+                        "startRowIndex": title_row - 1,
+                        "endRowIndex": title_row,
+                        "startColumnIndex": _COL_J,
+                        "endColumnIndex": _COL_K + 1,
+                    },
+                    "mergeType": "MERGE_ROWS",
+                }
             }
-        },
-        _repeat(
-            sheet_id,
-            _BALANCE_TITLE_ROW,
-            _BALANCE_TITLE_ROW,
-            j,
-            k,
-            _cell_format(background=LIGHT_BLUE, bold=True, halign="CENTER"),
-        ),
-    ]
+        )
+        requests.append(
+            _repeat(
+                sheet_id,
+                title_row,
+                title_row,
+                j,
+                k,
+                _cell_format(background=accent, bold=True, halign="CENTER"),
+            )
+        )
     for column in (_COL_G, _COL_J):
         requests.append(
             {

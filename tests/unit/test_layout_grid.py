@@ -12,13 +12,14 @@ import pytest
 
 from banking.sheets.layout import (
     CATEGORIES,
+    INCOME_LABELS,
     MAX_EXPENSE_ROWS,
     AccountBalance,
     ExpenseRow,
     build_month_grid,
 )
 
-# Sheet coordinates from spec.md "Layout contract".
+# Sheet coordinates from spec.md "Layout contract" and task 022's panel geometry.
 B, C, D, E, G, H, J, K = 1, 2, 3, 4, 6, 7, 9, 10
 COLUMN_COUNT = 11  # A..K
 TITLE_ROW = 2
@@ -27,9 +28,17 @@ FIRST_EXPENSE_ROW = 4
 CATEGORY_FIRST_ROW = 4
 CATEGORY_LAST_ROW = 3 + len(CATEGORIES)  # 52
 CATEGORY_TOTAL_ROW = CATEGORY_LAST_ROW + 1  # 53
-SUMMARY_FIRST_ROW = 4
-SUMMARY_TOTAL_ROW = 6
-BALANCE_TITLE_ROW = 8
+INCOME_FIRST_ROW = 4
+INCOME_LAST_ROW = 10
+SUMMARY_TITLE_ROW = 12
+SUMMARY_HEADER_ROW = 13
+SUMMARY_INCOME_ROW = 14
+SUMMARY_EXPENSE_ROW = 15
+SUMMARY_SHARED_ROW = 16
+SUMMARY_TOTAL_ROW = 18
+BALANCE_TITLE_ROW = 20
+BALANCE_HEADER_ROW = 21
+BALANCE_FIRST_ROW = 22
 
 
 def _cell(grid: list[list[object]], sheet_row: int, column: int) -> object:
@@ -75,7 +84,29 @@ def test_titles_and_headers_match_the_contract() -> None:
         "IMPORTE",
     ]
     assert [_cell(grid, HEADER_ROW, column) for column in (G, H)] == ["CATEGORÍA", "TOTAL"]
-    assert [_cell(grid, HEADER_ROW, column) for column in (J, K)] == ["CONCEPTO", "IMPORTE"]
+    assert [_cell(grid, HEADER_ROW, column) for column in (J, K)] == ["CONCEPTO", "CANTIDAD"]
+
+
+def test_income_table_lists_the_seven_concepts_with_empty_amounts() -> None:
+    grid = build_month_grid([], [])
+
+    assert INCOME_LABELS == (
+        "Nómina",
+        "Acciones IB",
+        "Dividendos IB",
+        "Opciones IB",
+        "Intereses IB",
+        "MyInvestor",
+        "Parking",
+    )
+    assert [_cell(grid, INCOME_FIRST_ROW + offset, J) for offset in range(len(INCOME_LABELS))] == [
+        *INCOME_LABELS
+    ]
+    # The owner types every amount by hand: the process never invents one.
+    assert [_cell(grid, INCOME_FIRST_ROW + offset, K) for offset in range(len(INCOME_LABELS))] == [
+        None
+    ] * len(INCOME_LABELS)
+    assert _cell(grid, INCOME_LAST_ROW + 1, J) is None  # blank row before the summary
 
 
 def test_expense_rows_start_at_row_four_with_four_columns_and_no_currency() -> None:
@@ -158,22 +189,30 @@ def test_shared_expenses_total_row_follows_the_catalogue() -> None:
     assert len(grid) == CATEGORY_TOTAL_ROW
 
 
-def test_summary_block_uses_the_two_sumif_formulas_and_a_shared_total() -> None:
+def test_summary_table_sums_income_and_subtracts_both_expense_blocks() -> None:
     grid = build_month_grid([_expense()], [])
 
-    assert _cell(grid, SUMMARY_FIRST_ROW, J) == "Ingresos"
-    assert _cell(grid, SUMMARY_FIRST_ROW, K) == '=SUMIF($E$4:$E$403,">0",$E$4:$E$403)'
-    assert _cell(grid, SUMMARY_FIRST_ROW + 1, J) == "Gastos"
-    assert _cell(grid, SUMMARY_FIRST_ROW + 1, K) == '=SUMIF($E$4:$E$403,"<0",$E$4:$E$403)'
+    assert _cell(grid, SUMMARY_TITLE_ROW, J) == "RESUMEN MES"
+    assert [_cell(grid, SUMMARY_HEADER_ROW, column) for column in (J, K)] == [
+        "CONCEPTO",
+        "CANTIDAD",
+    ]
+    assert _cell(grid, SUMMARY_INCOME_ROW, J) == "Ingresos totales"
+    assert _cell(grid, SUMMARY_INCOME_ROW, K) == "=SUM(K4:K10)"
+    assert _cell(grid, SUMMARY_EXPENSE_ROW, J) == "Gastos míos"
+    assert _cell(grid, SUMMARY_EXPENSE_ROW, K) == '=-SUMIF($E$4:$E$403,"<0",$E$4:$E$403)'
+    assert _cell(grid, SUMMARY_SHARED_ROW, J) == "Gastos comunes"
+    assert _cell(grid, SUMMARY_SHARED_ROW, K) == "=H53"
+    assert _cell(grid, SUMMARY_SHARED_ROW + 1, J) is None  # blank row before the total
     assert _cell(grid, SUMMARY_TOTAL_ROW, J) == "Total"
-    assert _cell(grid, SUMMARY_TOTAL_ROW, K) == "=K4+K5"
+    assert _cell(grid, SUMMARY_TOTAL_ROW, K) == "=K14-K15-K16"
 
 
 def test_summary_is_positioned_independently_of_the_catalogue_length() -> None:
     grid = build_month_grid([], [])
 
     # The summary does not move when the catalogue grows; the panel below it does.
-    assert _cell(grid, SUMMARY_FIRST_ROW, J) == "Ingresos"
+    assert _cell(grid, SUMMARY_TITLE_ROW, J) == "RESUMEN MES"
     assert _cell(grid, CATEGORY_TOTAL_ROW, G) == "Total"
     assert _cell(grid, BALANCE_TITLE_ROW, J) == "SALDO CUENTAS"
 
@@ -185,7 +224,7 @@ def test_empty_month_still_yields_titles_headers_catalogue_and_formulas() -> Non
     assert _cell(grid, HEADER_ROW, B) == "FECHA"
     assert _cell(grid, CATEGORY_FIRST_ROW, G) == "Alimentación"
     assert _cell(grid, CATEGORY_TOTAL_ROW, H) == "=SUM(H4:H52)"
-    assert _cell(grid, SUMMARY_FIRST_ROW, K) == '=SUMIF($E$4:$E$403,">0",$E$4:$E$403)'
+    assert _cell(grid, SUMMARY_INCOME_ROW, K) == "=SUM(K4:K10)"
     assert _cell(grid, FIRST_EXPENSE_ROW, B) is None
 
 
@@ -214,18 +253,18 @@ def test_balance_rows_keep_the_supplied_order_and_end_with_the_total() -> None:
     grid = build_month_grid([], balances)
 
     assert _cell(grid, BALANCE_TITLE_ROW, J) == "SALDO CUENTAS"
-    assert [_cell(grid, BALANCE_TITLE_ROW + 1, column) for column in (J, K)] == [
+    assert [_cell(grid, BALANCE_HEADER_ROW, column) for column in (J, K)] == [
         "CUENTA",
         "SALDO",
     ]
-    assert _cell(grid, BALANCE_TITLE_ROW + 2, J) == "ING España"
-    assert _cell(grid, BALANCE_TITLE_ROW + 2, K) == 1234.5
-    assert _cell(grid, BALANCE_TITLE_ROW + 3, J) == "Revolut"
-    assert _cell(grid, BALANCE_TITLE_ROW + 3, K) == 99.99
+    assert _cell(grid, BALANCE_FIRST_ROW, J) == "ING España"
+    assert _cell(grid, BALANCE_FIRST_ROW, K) == 1234.5
+    assert _cell(grid, BALANCE_FIRST_ROW + 1, J) == "Revolut"
+    assert _cell(grid, BALANCE_FIRST_ROW + 1, K) == 99.99
 
-    total_row = BALANCE_TITLE_ROW + 4
+    total_row = BALANCE_FIRST_ROW + 2
     assert _cell(grid, total_row, J) == "Total"
-    assert _cell(grid, total_row, K) == "=SUM(K10:K11)"
+    assert _cell(grid, total_row, K) == "=SUM(K22:K23)"
     assert _cell(grid, total_row + 1, J) is None
     assert _cell(grid, total_row + 1, K) is None
     assert len(grid) == CATEGORY_TOTAL_ROW
@@ -242,13 +281,13 @@ def test_balance_without_amount_leaves_the_cell_empty_and_out_of_the_total() -> 
 
     grid = build_month_grid([], balances)
 
-    assert _cell(grid, BALANCE_TITLE_ROW + 2, J) == "ING España"
-    assert _cell(grid, BALANCE_TITLE_ROW + 3, J) == "Sabadell"
-    assert _cell(grid, BALANCE_TITLE_ROW + 3, K) is None
-    assert _cell(grid, BALANCE_TITLE_ROW + 4, J) == "Revolut"
+    assert _cell(grid, BALANCE_FIRST_ROW, J) == "ING España"
+    assert _cell(grid, BALANCE_FIRST_ROW + 1, J) == "Sabadell"
+    assert _cell(grid, BALANCE_FIRST_ROW + 1, K) is None
+    assert _cell(grid, BALANCE_FIRST_ROW + 2, J) == "Revolut"
     # The total is a range over every balance row: SUM skips the blank cell, so a
     # hand-typed balance in it would be picked up later.
-    assert _cell(grid, BALANCE_TITLE_ROW + 5, K) == "=SUM(K10:K12)"
+    assert _cell(grid, BALANCE_FIRST_ROW + 3, K) == "=SUM(K22:K24)"
 
 
 def test_all_balances_missing_leave_cells_empty_but_keep_the_total_range() -> None:
@@ -256,10 +295,10 @@ def test_all_balances_missing_leave_cells_empty_but_keep_the_total_range() -> No
 
     grid = build_month_grid([], balances)
 
-    total_row = BALANCE_TITLE_ROW + 2 + len(balances)
+    total_row = BALANCE_FIRST_ROW + len(balances)
     assert _cell(grid, total_row, J) == "Total"
-    assert _cell(grid, total_row, K) == "=SUM(K10:K10)"
-    assert _cell(grid, BALANCE_TITLE_ROW + 2, K) is None
+    assert _cell(grid, total_row, K) == "=SUM(K22:K22)"
+    assert _cell(grid, BALANCE_FIRST_ROW, K) is None
 
 
 def test_nothing_is_written_below_the_total_row() -> None:
@@ -271,7 +310,7 @@ def test_nothing_is_written_below_the_total_row() -> None:
 
     grid = build_month_grid([], balances)
 
-    reference_row = BALANCE_TITLE_ROW + 2 + len(balances) + 1
+    reference_row = BALANCE_FIRST_ROW + len(balances) + 1
     assert _cell(grid, reference_row, J) is None
     assert _cell(grid, reference_row, K) is None
 
@@ -284,7 +323,7 @@ def test_nothing_is_written_below_the_total_row_without_dates() -> None:
 
     grid = build_month_grid([], balances)
 
-    reference_row = BALANCE_TITLE_ROW + 2 + len(balances) + 1
+    reference_row = BALANCE_FIRST_ROW + len(balances) + 1
     assert _cell(grid, reference_row, J) is None
     assert _cell(grid, reference_row, K) is None
 
@@ -293,11 +332,11 @@ def test_balance_panel_exists_even_without_balances() -> None:
     grid = build_month_grid([], [])
 
     assert _cell(grid, BALANCE_TITLE_ROW, J) == "SALDO CUENTAS"
-    assert _cell(grid, BALANCE_TITLE_ROW + 1, J) == "CUENTA"
-    assert _cell(grid, BALANCE_TITLE_ROW + 2, J) == "Total"
-    assert _cell(grid, BALANCE_TITLE_ROW + 2, K) is None
-    assert _cell(grid, BALANCE_TITLE_ROW + 3, J) is None
-    assert _cell(grid, BALANCE_TITLE_ROW + 3, K) is None
+    assert _cell(grid, BALANCE_HEADER_ROW, J) == "CUENTA"
+    assert _cell(grid, BALANCE_FIRST_ROW, J) == "Total"
+    assert _cell(grid, BALANCE_FIRST_ROW, K) is None
+    assert _cell(grid, BALANCE_FIRST_ROW + 1, J) is None
+    assert _cell(grid, BALANCE_FIRST_ROW + 1, K) is None
 
 
 def test_every_formula_is_a_string_starting_with_equals() -> None:
@@ -306,5 +345,5 @@ def test_every_formula_is_a_string_starting_with_equals() -> None:
     formulas = [
         value for row in grid for value in row if isinstance(value, str) and value.startswith("=")
     ]
-    assert len(formulas) == 4  # shared total, two SUMIF, net result
+    assert len(formulas) == 5  # shared total, income SUM, own expenses, shared cell, outcome
     assert all(isinstance(formula, str) for formula in formulas)

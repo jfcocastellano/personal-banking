@@ -1,6 +1,8 @@
 # 022 — Replicar el estilo del libro de gastos en todas las hojas
 
-Estado: **bloqueada en acceso**, especificación cerrada. Origen: `Gastos 2026 hasta 31
+Estado: **implementada en `2026-11`** (panel de dos tablas y estilo aplicados el
+2026-11-23); quedan pendientes la llamada al estilo al crear pestaña y el comando
+`banking style`. Origen: `Gastos 2026 hasta 31
 octubre inclusive.xlsx` (hoja `Plantilla`), extraído leyendo `xl/styles.xml` y
 `xl/worksheets/sheet1.xml` del zip, sin openpyxl.
 
@@ -141,7 +143,7 @@ del escritor.
 2. `Ingresos totales` = **suma de esas siete filas** (`SUM(K4:K10)`), no el `SUMIF` de la
    columna de importes. Si una fila queda vacía, el total no la cuenta.
 
-### Geometría propuesta (pendiente de implementar)
+### Geometría implementada
 
 | Filas | Contenido |
 |-------|-----------|
@@ -171,3 +173,47 @@ cierra el panel.
 
 Efecto colateral bueno: el `#ERROR!` de la celda `Total` del resumen
 (`=K4+K5`) desaparece al reescribirse esa fórmula como `=K14-K15-K16`.
+
+## Implementación (2026-11-23)
+
+Constantes nuevas en `layout.py`: `_INCOME_TITLE_ROW=2`, `_INCOME_HEADER_ROW=3`,
+`_INCOME_FIRST_ROW=4`, `_INCOME_LAST_ROW=10`, `_SUMMARY_TITLE_ROW=12`,
+`_SUMMARY_HEADER_ROW=13`, `_SUMMARY_INCOME_ROW=14`, `_SUMMARY_EXPENSE_ROW=15`,
+`_SUMMARY_SHARED_ROW=16`, `_SUMMARY_TOTAL_ROW=18`, `_BALANCE_TITLE_ROW=20`,
+`_BALANCE_HEADER_ROW=21`, `_BALANCE_FIRST_ROW=22`, `_SUMMARY_PANEL_LAST_ROW=30`, y la
+tupla `INCOME_LABELS`.
+
+Fórmulas finales: `K14 =SUM(K4:K10)`, `K15 =-SUMIF($E$4:$E$403,"<0",$E$4:$E$403)`,
+`K16 =H53`, `K18 =K14-K15-K16`. Las dos fórmulas de gasto comparten cuerpo
+(`_SPEND_BODY`) para que el signo no se duplique: la primera versión generaba
+`=-=SUMIF(...)` y el test del resumen lo cazó antes de llegar al documento.
+
+Escritura (`_write_summary_region`): si la fila 12 columna J no dice `RESUMEN MES`, la
+pestaña está en la geometría vieja y se limpia desde `J2` (una sola vez); a partir de ahí
+solo `J12:K30`. El rango de formato de dinero empieza en `K4`, de modo que los importes
+del dueño también se ven como euros.
+
+`style._right_hand_panel` repinta las tres bandas (ingresos verde, resumen blanco, saldos
+azul claro) y `layout_requests` fusiona `J12:K12` y `J20:K20` además de las bandas de la
+fila 2.
+
+Tests: `tests/unit/test_layout_grid.py` (21), `tests/unit/test_layout_writer.py` (31,
+incluye migración desde la geometría vieja y que `K4:K10` sobrevive a los refrescos) y
+`tests/unit/sheets/test_style.py` (4, payload puro: geometría correcta y ningún request
+escribe valores).
+
+Aplicado a `2026-11` por API: se deshizo el merge viejo `J8:K8`, se reescribió el panel
+con el mismo camino que usa el refresco, se fusionaron los títulos nuevos y se aplicó
+`format_requests` + `layout_requests` + alto de fila. Verificado leyendo `J1:L32`: la
+geometría coincide con la tabla de arriba y los merges son `B2:E2`, `G2:H2`, `J2:K2`,
+`J12:K12`, `J20:K20`. Los saldos que ya había (ING 868,70; Revolut 13,46; MyInvestor y
+Sabadell sin importe) se conservaron; `K4:K10` queda vacío a la espera de que el dueño
+teclee los ingresos, así que `Ingresos totales` marca 0 hasta entonces.
+
+Pendiente:
+
+1. Llamar a `format_requests`/`layout_requests` desde `layout.py` al crear una pestaña;
+   hoy diciembre nacería con el panel nuevo pero sin el estilo del libro.
+2. Comando `banking style --sheet 2026-11` (idempotente) para no depender de un script
+   suelto.
+3. Extender el estilo al resto de pestañas cuando el dueño lo apruebe (D3).

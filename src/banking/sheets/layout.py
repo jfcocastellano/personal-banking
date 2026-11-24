@@ -132,25 +132,71 @@ _CATEGORY_FIRST_ROW = 4
 _CATEGORY_LAST_ROW = _CATEGORY_FIRST_ROW + len(CATEGORIES) - 1  # 52
 _CATEGORY_TOTAL_ROW = _CATEGORY_LAST_ROW + 1  # 53
 
-_SUMMARY_FIRST_ROW = _CATEGORY_FIRST_ROW
-_SUMMARY_EXPENSE_ROW = _SUMMARY_FIRST_ROW + 1
-_SUMMARY_TOTAL_ROW = _SUMMARY_FIRST_ROW + 2
+# Region the update path clears and rewrites: the header row plus the block. The
+# header is inside on purpose — a tab created while 017/T4 was live carries
+# `CATEGORÍA`/`TOTAL` on row 3, and rewriting the header heals it instead of
+# leaving stale labels above the movement list until the month is recreated.
+_EXPENSE_REGION = f"B{_HEADER_ROW}:E{_EXPENSE_LAST_ROW}"
+_AMOUNT_RANGE = f"$E${_EXPENSE_FIRST_ROW}:$E${_EXPENSE_LAST_ROW}"
 
-_BALANCE_TITLE_ROW = _SUMMARY_TOTAL_ROW + 2  # 8
-_BALANCE_HEADER_ROW = _BALANCE_TITLE_ROW + 1
-_BALANCE_FIRST_ROW = _BALANCE_HEADER_ROW + 1
+# Right-hand panel, top to bottom (task 022): the income table the owner fills by
+# hand, the month summary computed from the expense block, then the balances
+# snapshot. The income table reuses the J:K title and header rows, because it sits
+# where the summary used to.
+_INCOME_TITLE_ROW = _TITLE_ROW  # 2
+_INCOME_HEADER_ROW = _HEADER_ROW  # 3
+_INCOME_FIRST_ROW = _INCOME_HEADER_ROW + 1  # 4
+INCOME_LABELS: tuple[str, ...] = (
+    "Nómina",
+    "Acciones IB",
+    "Dividendos IB",
+    "Opciones IB",
+    "Intereses IB",
+    "MyInvestor",
+    "Parking",
+)
+_INCOME_LAST_ROW = _INCOME_FIRST_ROW + len(INCOME_LABELS) - 1  # 10
+_INCOME_RANGE = f"K{_INCOME_FIRST_ROW}:K{_INCOME_LAST_ROW}"
+
+# One blank row separates the income table from the summary, and another one
+# separates the three expense figures from the outcome.
+_SUMMARY_TITLE_ROW = _INCOME_LAST_ROW + 2  # 12
+_SUMMARY_HEADER_ROW = _SUMMARY_TITLE_ROW + 1  # 13
+_SUMMARY_INCOME_ROW = _SUMMARY_HEADER_ROW + 1  # 14
+_SUMMARY_EXPENSE_ROW = _SUMMARY_INCOME_ROW + 1  # 15
+_SUMMARY_SHARED_ROW = _SUMMARY_EXPENSE_ROW + 1  # 16
+_SUMMARY_TOTAL_ROW = _SUMMARY_SHARED_ROW + 2  # 18
+
+_BALANCE_TITLE_ROW = _SUMMARY_TOTAL_ROW + 2  # 20
+_BALANCE_HEADER_ROW = _BALANCE_TITLE_ROW + 1  # 21
+_BALANCE_FIRST_ROW = _BALANCE_HEADER_ROW + 1  # 22
+
+_SUMMARY_TITLE = "RESUMEN MES"
+_BALANCE_TITLE = "SALDO CUENTAS"
+_INCOME_TITLE = "INGRESOS"
+_PANEL_HEADERS: tuple[str, str] = ("CONCEPTO", "CANTIDAD")
 
 
 def _summary_panel_last_row(balance_count: int) -> int:
-    """Last row of the summary/balances panel for ``balance_count`` accounts."""
-    return _BALANCE_FIRST_ROW + balance_count + 1
+    """Last row of the summary/balances panel: the balances total row."""
+    return _BALANCE_FIRST_ROW + balance_count
 
 
 # Panel height the update path clears. Deliberately larger than the four
 # connectors, so a panel that shrank (an account removed, a bank offline)
 # leaves no stale row behind.
 _MAX_BALANCE_ROWS = 8
-_SUMMARY_PANEL_LAST_ROW = _summary_panel_last_row(_MAX_BALANCE_ROWS)  # 19
+_SUMMARY_PANEL_LAST_ROW = _summary_panel_last_row(_MAX_BALANCE_ROWS)  # 30
+
+_INCOME_TOTAL_FORMULA = f"=SUM({_INCOME_RANGE})"
+_SPEND_BODY = f'SUMIF({_AMOUNT_RANGE},"<0",{_AMOUNT_RANGE})'
+_SPEND_FORMULA = f"={_SPEND_BODY}"
+# Expenses are shown positive and subtracted from the income, so the outcome reads
+# like the owner's ledger: 368.39 - 1735.98 - 800.00 = -2167.59.
+_OWN_EXPENSE_FORMULA = f"=-{_SPEND_BODY}"
+_SHARED_TOTAL_FORMULA = f"=SUM(H{_CATEGORY_FIRST_ROW}:H{_CATEGORY_LAST_ROW})"
+_SHARED_TOTAL_CELL_FORMULA = f"=H{_CATEGORY_TOTAL_ROW}"
+_SUMMARY_TOTAL_FORMULA = f"=K{_SUMMARY_INCOME_ROW}-K{_SUMMARY_EXPENSE_ROW}-K{_SUMMARY_SHARED_ROW}"
 
 
 def _summary_panel_range_last_row(balance_count: int) -> int:
@@ -162,23 +208,14 @@ def _summary_panel_range_last_row(balance_count: int) -> int:
     return max(_summary_panel_last_row(balance_count), _SUMMARY_PANEL_LAST_ROW)
 
 
-# Region the update path clears and rewrites: the header row plus the block. The
-# header is inside on purpose — a tab created while 017/T4 was live carries
-# `CATEGORÍA`/`TOTAL` on row 3, and rewriting the header heals it instead of
-# leaving stale labels above the movement list until the month is recreated.
-_EXPENSE_REGION = f"B{_HEADER_ROW}:E{_EXPENSE_LAST_ROW}"
-_AMOUNT_RANGE = f"$E${_EXPENSE_FIRST_ROW}:$E${_EXPENSE_LAST_ROW}"
-_INCOME_FORMULA = f'=SUMIF({_AMOUNT_RANGE},">0",{_AMOUNT_RANGE})'
-_SPEND_FORMULA = f'=SUMIF({_AMOUNT_RANGE},"<0",{_AMOUNT_RANGE})'
-_SHARED_TOTAL_FORMULA = f"=SUM(H{_CATEGORY_FIRST_ROW}:H{_CATEGORY_LAST_ROW})"
-
+# Every title is a merged J:K band, so all five are merged at creation.
 _TITLE_RANGES: tuple[str, ...] = (
     f"B{_TITLE_ROW}:E{_TITLE_ROW}",
     f"G{_TITLE_ROW}:H{_TITLE_ROW}",
-    f"J{_TITLE_ROW}:K{_TITLE_ROW}",
+    f"J{_INCOME_TITLE_ROW}:K{_INCOME_TITLE_ROW}",
+    f"J{_SUMMARY_TITLE_ROW}:K{_SUMMARY_TITLE_ROW}",
+    f"J{_BALANCE_TITLE_ROW}:K{_BALANCE_TITLE_ROW}",
 )
-
-_NO_REFERENCE_DATE = "sin dato de referencia"
 
 # The raw pipeline's five columns (``banking.sync._HEADERS``). Duplicated on
 # purpose: importing the sync pipeline from the sheet layer would invert the
@@ -353,6 +390,7 @@ def build_month_grid(
         line[column] = value
 
     _place_titles_and_headers(place)
+    _place_income(place)
     _place_expenses(place, transactions)
     _place_shared_expenses(place)
     _place_summary(place)
@@ -365,18 +403,25 @@ def _place_titles_and_headers(place: Place) -> None:
     # Titles: only the first cell of each merged range is filled.
     place(_TITLE_ROW, _COL_B, "GASTOS")
     place(_TITLE_ROW, _COL_G, "GASTOS COMUNES")
-    place(_TITLE_ROW, _COL_J, "INGRESOS")
 
     for offset, header in enumerate(_EXPENSE_HEADERS):
         place(_HEADER_ROW, _COL_B + offset, header)
 
-    for column, header in (
-        (_COL_G, "CATEGORÍA"),
-        (_COL_H, "TOTAL"),
-        (_COL_J, "CONCEPTO"),
-        (_COL_K, "IMPORTE"),
-    ):
+    for column, header in ((_COL_G, "CATEGORÍA"), (_COL_H, "TOTAL")):
         place(_HEADER_ROW, column, header)
+
+
+def _place_income(place: Place) -> None:
+    """The income table: fixed concept labels, amounts left for the owner.
+
+    The amounts in ``K`` are typed by hand (there is no bank transaction that tells
+    "Dividendos IB" from "Opciones IB"), so nothing here writes below the labels.
+    """
+    place(_INCOME_TITLE_ROW, _COL_J, _INCOME_TITLE)
+    place(_INCOME_HEADER_ROW, _COL_J, _PANEL_HEADERS[0])
+    place(_INCOME_HEADER_ROW, _COL_K, _PANEL_HEADERS[1])
+    for offset, label in enumerate(INCOME_LABELS):
+        place(_INCOME_FIRST_ROW + offset, _COL_J, label)
 
 
 def _place_expenses(place: Place, transactions: Sequence[ExpenseRow]) -> None:
@@ -394,17 +439,22 @@ def _place_shared_expenses(place: Place) -> None:
 
 
 def _place_summary(place: Place) -> None:
-    """Formulas over the expense amount column; signed amounts are kept as-is."""
-    place(_SUMMARY_FIRST_ROW, _COL_J, "Ingresos")
-    place(_SUMMARY_FIRST_ROW, _COL_K, _INCOME_FORMULA)
-    place(_SUMMARY_EXPENSE_ROW, _COL_J, "Gastos")
-    place(_SUMMARY_EXPENSE_ROW, _COL_K, _SPEND_FORMULA)
+    """The month summary: income minus own and shared expenses, in that order."""
+    place(_SUMMARY_TITLE_ROW, _COL_J, _SUMMARY_TITLE)
+    place(_SUMMARY_HEADER_ROW, _COL_J, _PANEL_HEADERS[0])
+    place(_SUMMARY_HEADER_ROW, _COL_K, _PANEL_HEADERS[1])
+    place(_SUMMARY_INCOME_ROW, _COL_J, "Ingresos totales")
+    place(_SUMMARY_INCOME_ROW, _COL_K, _INCOME_TOTAL_FORMULA)
+    place(_SUMMARY_EXPENSE_ROW, _COL_J, "Gastos míos")
+    place(_SUMMARY_EXPENSE_ROW, _COL_K, _OWN_EXPENSE_FORMULA)
+    place(_SUMMARY_SHARED_ROW, _COL_J, "Gastos comunes")
+    place(_SUMMARY_SHARED_ROW, _COL_K, _SHARED_TOTAL_CELL_FORMULA)
     place(_SUMMARY_TOTAL_ROW, _COL_J, "Total")
-    place(_SUMMARY_TOTAL_ROW, _COL_K, f"=K{_SUMMARY_FIRST_ROW}+K{_SUMMARY_EXPENSE_ROW}")
+    place(_SUMMARY_TOTAL_ROW, _COL_K, _SUMMARY_TOTAL_FORMULA)
 
 
 def _place_balances(place: Place, balances: Sequence[AccountBalance]) -> None:
-    place(_BALANCE_TITLE_ROW, _COL_J, "SALDO CUENTAS")
+    place(_BALANCE_TITLE_ROW, _COL_J, _BALANCE_TITLE)
     place(_BALANCE_HEADER_ROW, _COL_J, "CUENTA")
     place(_BALANCE_HEADER_ROW, _COL_K, "SALDO")
 
@@ -500,19 +550,48 @@ def _write_expense_region(worksheet: gspread.Worksheet, transactions: Sequence[E
         raise _translate_api_error(exc) from exc
 
 
+def _panel_is_current(worksheet: gspread.Worksheet) -> bool:
+    """Whether the right-hand panel already holds the two-table geometry (022).
+
+    The marker is the summary title. A tab written before the income table existed
+    keeps the old summary in rows 4-6, exactly where the income rows are now; a
+    refresh that only cleared from the summary down would leave those cells behind
+    and read the old totals as hand-typed income. Reading the marker lets the first
+    run after the change reset the whole panel once, and every later run clear only
+    what it owns.
+
+    Raises:
+        SheetsAccessError: the marker row could not be read.
+    """
+    try:
+        row = worksheet.row_values(_SUMMARY_TITLE_ROW)
+    except gspread.exceptions.APIError as exc:
+        raise _translate_api_error(exc) from exc
+
+    # gspread returns the row from column A, so index ``_COL_J`` is column J.
+    value = row[_COL_J] if len(row) > _COL_J else ""
+    return str(value).strip() == _SUMMARY_TITLE
+
+
 def _write_summary_region(worksheet: gspread.Worksheet, balances: Sequence[AccountBalance]) -> None:
-    """Clear and rewrite only J:K, from the summary down to the reference date.
+    """Clear and rewrite the ``J:K`` panel from the summary down to its floor.
 
     The same placement helpers as ``build_month_grid`` fill the region, so the
     creation path and the daily refresh cannot drift apart. Columns A-I are
     never addressed, which is what keeps ``G:H`` (hand-typed shared amounts) and
     ``B:E`` (expenses) intact.
 
+    The income table above the summary is not cleared on refresh: its seven amounts
+    are typed by hand and the summary reads them. Only a tab still in the pre-022
+    geometry, where those rows hold the old summary, is reset once from the income
+    title down, which is also what writes the fixed labels there.
+
     The write is USER_ENTERED because the summary cells are formulas and must
     evaluate. The clear always reaches ``_SUMMARY_PANEL_LAST_ROW`` even when the
     panel is shorter, so a dropped account leaves no stale row behind.
     """
-    first_row = _SUMMARY_FIRST_ROW
+    reset_income_table = not _panel_is_current(worksheet)
+    first_row = _INCOME_TITLE_ROW if reset_income_table else _SUMMARY_TITLE_ROW
     last_row = _summary_panel_range_last_row(len(balances))
 
     cells: dict[int, list[CellValue]] = {}
@@ -523,6 +602,8 @@ def _write_summary_region(worksheet: gspread.Worksheet, balances: Sequence[Accou
             line.append(None)
         line[column] = value
 
+    if reset_income_table:
+        _place_income(place)
     _place_summary(place)
     _place_balances(place, balances)
 
@@ -534,13 +615,13 @@ def _write_summary_region(worksheet: gspread.Worksheet, balances: Sequence[Accou
     try:
         worksheet.batch_clear([f"J{first_row}:K{last_row}"])
         worksheet.update(values=grid, range_name=f"J{first_row}", raw=False)
-        worksheet.format(f"K{first_row}:K{last_row}", _MONEY_FORMAT)
+        worksheet.format(f"K{_INCOME_FIRST_ROW}:K{last_row}", _MONEY_FORMAT)
     except gspread.exceptions.APIError as exc:
         raise _translate_api_error(exc) from exc
 
 
 def _merge_titles(worksheet: gspread.Worksheet) -> None:
-    """Merge the three title ranges the layout contract declares.
+    """Merge the five title bands the layout contract declares.
 
     Creation only: a merge is a structural property of the tab, and neither the
     expense region nor the summary panel re-merges anything on update.
@@ -555,7 +636,7 @@ def _merge_titles(worksheet: gspread.Worksheet) -> None:
 def _apply_light_formatting(worksheet: gspread.Worksheet, balance_count: int) -> None:
     """Bold the titles and headers, and use a euro format for the money cells.
 
-    The ``K`` range is the whole summary/balances panel, the same one
+    The ``K`` range is the whole income/summary/balances panel, the same one
     ``_write_summary_region`` formats on every later run, so the summary totals
     look like money from the first run on.
     """
@@ -571,7 +652,7 @@ def _apply_light_formatting(worksheet: gspread.Worksheet, balance_count: int) ->
             _MONEY_FORMAT,
         )
         worksheet.format(
-            f"K{_SUMMARY_FIRST_ROW}:K{_summary_panel_range_last_row(balance_count)}",
+            f"K{_INCOME_FIRST_ROW}:K{_summary_panel_range_last_row(balance_count)}",
             _MONEY_FORMAT,
         )
     except gspread.exceptions.APIError as exc:
@@ -584,9 +665,9 @@ class LayoutWriter:
     The tab is created once with the full grid. Every later run clears and
     rewrites ``B3:E403`` (header included) and the ``J:K`` summary/balances panel
     (so the balances stay a fresh snapshot with the bank's reference date), and
-    nothing else. The
-    shared-expense block ``G:H`` is therefore never touched again, which is what
-    keeps hand-typed amounts safe (FR-009).
+    nothing else. The shared-expense block ``G:H`` and the hand-typed income
+    amounts ``K4:K10`` are therefore never touched again, which is what keeps
+    hand-typed amounts safe (FR-009).
     """
 
     def __init__(self, client: gspread.Client | None = None) -> None:
