@@ -198,11 +198,18 @@ ligero `FFFF99` con `CONCEPTO`/`CANTIDAD` en blanco, saldos azul claro) y
 `layout_requests` fusiona `J12:K12` y `J20:K20` además de las bandas de la fila 2.
 
 El resumen nació sin fondo («no tiene acento propio», pedido del 2026-11-22) y el
-2026-11-23 el dueño pidió **amarillo ligero en el título y la cabecera**, con las letras
-de `CONCEPTO`/`CANTIDAD` en blanco como la cabecera de gastos comunes. `LIGHT_YELLOW`
-vive en `style.py` y se usa en los dos sitios que pintan la banda: el `repeatCell` del
+2026-11-23 el dueño pidió **amarillo en el título y la cabecera**, con las letras de
+`CONCEPTO`/`CANTIDAD` en blanco como la cabecera de gastos comunes. El primer intento,
+`FFFF99`, le pareció poco amarillo, así que `LIGHT_YELLOW` es ahora `FFDE00` (amarillo
+cálido y saturado) y se usa en los dos sitios que pintan la banda: el `repeatCell` del
 panel y el de `layout_requests`, para que el merge no la devuelva a blanco. El título
 conserva las letras negras.
+
+En la misma petición, las cabeceras ganan aire: `header_height_requests` sube las filas
+de título y cabecera (2-3, 12-13, 20-21) a 28 px sobre los 17 px del cuerpo, y
+`layout_requests` cambia el `autoResizeDimensions` por anchos explícitos con holgura
+sobre el original (`G` 210 px, `J` 200 px, `K` 130 px; el libro de referencia pedía
+≈187/178/122 px). Se aplica también a los títulos de gastos y comunes, no solo al panel.
 
 Tests: `tests/unit/test_layout_grid.py` (21), `tests/unit/test_layout_writer.py` (31,
 incluye migración desde la geometría vieja y que `K4:K10` sobrevive a los refrescos) y

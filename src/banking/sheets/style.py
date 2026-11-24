@@ -39,10 +39,18 @@ RED = {"red": 1.0, "green": 0.0, "blue": 0.0}
 GREEN = {"red": 0.34, "green": 0.82, "blue": 0.31}
 ORANGE = {"red": 0.98, "green": 0.75, "blue": 0.56}
 LIGHT_BLUE = {"red": 0.74, "green": 0.84, "blue": 0.93}
-LIGHT_YELLOW = {"red": 1.0, "green": 1.0, "blue": 0.6}
+# The summary band: a strong, warm yellow (``FFDE00``), darker than the pale
+# ``FFFF99`` the owner rejected for not reading as yellow.
+LIGHT_YELLOW = {"red": 1.0, "green": 0.87, "blue": 0.0}
 WHITE = {"red": 1.0, "green": 1.0, "blue": 1.0}
 
 _ROW_HEIGHT = 12.75
+# Title and header rows get more room than the body so the bold labels breathe and
+# ``GASTOS COMUNES`` / ``CONCEPTO`` fit without looking cramped.
+_TITLE_ROW_HEIGHT = 28
+# Column widths in pixels: above what the reference needs (25.88 / 24.5 / 16
+# characters) so the longest label has a little slack instead of being cut.
+_COLUMN_WIDTHS = {_COL_G: 210, _COL_J: 200, _COL_K: 130}
 
 
 def _cell_format(
@@ -303,6 +311,33 @@ def row_height_requests(sheet_id: int, rows: int) -> list[dict[str, Any]]:
     ]
 
 
+def header_height_requests(sheet_id: int) -> list[dict[str, Any]]:
+    """Taller title and header rows, above the uniform 12.75 pt body height."""
+    rows = (
+        _SUMMARY_TITLE_ROW,
+        _SUMMARY_HEADER_ROW,
+        _BALANCE_TITLE_ROW,
+        _BALANCE_HEADER_ROW,
+        _INCOME_TITLE_ROW,
+        _INCOME_HEADER_ROW,
+    )
+    return [
+        {
+            "updateDimensionProperties": {
+                "range": {
+                    "sheetId": sheet_id,
+                    "dimension": "ROWS",
+                    "startIndex": row - 1,
+                    "endIndex": row,
+                },
+                "properties": {"pixelSize": _TITLE_ROW_HEIGHT},
+                "fields": "pixelSize",
+            }
+        }
+        for row in rows
+    ]
+
+
 def indent_requests(
     sheet_id: int, rows: Sequence[int], column: int, points: float = 24.0
 ) -> list[dict[str, Any]]:
@@ -315,10 +350,10 @@ def layout_requests(sheet_id: int, *, column_count: int) -> list[dict[str, Any]]
     """Structural touches that are not pure cell formatting.
 
     Merges the two ``J:K`` title bands that sit below the header, so they centre
-    across both columns like the income title, fits the two text columns to their
-    longest entry, and leaves one empty column on the far right. The trailing column
-    is only inserted while the sheet still ends at ``K``, so running this twice does
-    not keep appending columns.
+    across both columns like the income title, gives the three text columns a width
+    with a little slack over their longest label, and leaves one empty column on the
+    far right. The trailing column is only inserted while the sheet still ends at
+    ``K``, so running this twice does not keep appending columns.
     """
     j, k = _COL_J + 1, _COL_K + 1
     requests: list[dict[str, Any]] = []
@@ -350,16 +385,18 @@ def layout_requests(sheet_id: int, *, column_count: int) -> list[dict[str, Any]]
                 _cell_format(background=accent, bold=True, halign="CENTER"),
             )
         )
-    for column in (_COL_G, _COL_J):
+    for column, width in _COLUMN_WIDTHS.items():
         requests.append(
             {
-                "autoResizeDimensions": {
-                    "dimensions": {
+                "updateDimensionProperties": {
+                    "range": {
                         "sheetId": sheet_id,
                         "dimension": "COLUMNS",
                         "startIndex": column,
                         "endIndex": column + 1,
-                    }
+                    },
+                    "properties": {"pixelSize": width},
+                    "fields": "pixelSize",
                 }
             }
         )

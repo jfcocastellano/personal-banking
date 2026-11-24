@@ -23,7 +23,9 @@ from banking.sheets.style import (
     LIGHT_YELLOW,
     WHITE,
     format_requests,
+    header_height_requests,
     layout_requests,
+    row_height_requests,
 )
 
 SHEET_ID = 7
@@ -131,3 +133,36 @@ def test_layout_merges_the_summary_and_balance_titles_only() -> None:
             _BALANCE_TITLE_ROW,
         ),
     ]
+
+
+def test_the_title_and_header_rows_are_taller_than_the_body() -> None:
+    body = [
+        request["updateDimensionProperties"]["properties"]["pixelSize"]
+        for request in row_height_requests(SHEET_ID, 403)
+    ]
+    headers = {
+        request["updateDimensionProperties"]["range"]["startIndex"] + 1: request[
+            "updateDimensionProperties"
+        ]["properties"]["pixelSize"]
+        for request in header_height_requests(SHEET_ID)
+    }
+
+    assert body == [17]  # the uniform 12.75 pt of the reference
+    # Both bands of every block: expenses/shared (2-3), summary (12-13), balances
+    # (20-21), so the left tables get the extra room too, not only the J:K panel.
+    assert set(headers) == {2, 3, 12, 13, 20, 21}
+    assert all(height > body[0] for height in headers.values())
+
+
+def test_the_text_columns_are_wider_than_their_longest_label_needs() -> None:
+    widths = {
+        request["updateDimensionProperties"]["range"]["startIndex"] + 1: request[
+            "updateDimensionProperties"
+        ]["properties"]["pixelSize"]
+        for request in layout_requests(SHEET_ID, column_count=12)
+        if "updateDimensionProperties" in request
+    }
+
+    # G (GASTOS COMUNES / categoría), J (concepto/cuenta) and K (cantidad/saldo).
+    assert widths == {7: 210, 10: 200, 11: 130}
+    assert all(width > 120 for width in widths.values())
