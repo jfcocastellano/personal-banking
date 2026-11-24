@@ -205,9 +205,12 @@ cálido y saturado) y se usa en los dos sitios que pintan la banda: el `repeatCe
 panel y el de `layout_requests`, para que el merge no la devuelva a blanco. El título
 conserva las letras negras.
 
-En la misma petición, las cabeceras ganan aire: `header_height_requests` sube las filas
-de título y cabecera (2-3, 12-13, 20-21) a 28 px sobre los 17 px del cuerpo. Se aplica
-también a los títulos de gastos y comunes, no solo al panel.
+Después el dueño señaló una fila de gasto concreta de `2026-11` (`DELICIES ALBAL`,
+fila 13) como la que quería de alto y pidió que **todas las filas de las tablas** fueran
+así. Esa fila medía 28 px porque caía sobre una fila de cabecera del panel: el alto no
+era uniforme, sino 17 px de cuerpo con 28 en 2-3, 12-13 y 20-21. Ahora
+`row_height_requests` fija **28 px en todas las filas** y `header_height_requests`
+desaparece: no queda nada que diferenciar.
 
 Después el dueño pidió que **las celdas de contenido también se ensanchen**: el ancho
 del mayor elemento más un poco de holgura. `layout.column_widths` lo calcula por columna

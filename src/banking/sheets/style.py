@@ -43,10 +43,11 @@ LIGHT_BLUE = {"red": 0.74, "green": 0.84, "blue": 0.93}
 LIGHT_YELLOW = {"red": 1.0, "green": 0.87, "blue": 0.0}
 WHITE = {"red": 1.0, "green": 1.0, "blue": 1.0}
 
-_ROW_HEIGHT = 12.75
-# Title and header rows get more room than the body so the bold labels breathe and
-# ``GASTOS COMUNES`` / ``CONCEPTO`` fit without looking cramped.
-_TITLE_ROW_HEIGHT = 28
+# Every row is the same height: the owner picked a real row (2026-11-05, ``DELICIES
+# ALBAL``) that happened to carry the header height and asked for the whole sheet to
+# look like that. 28 px over the reference's 17 keeps the bold labels from looking
+# cramped.
+_ROW_HEIGHT = 28
 # Column widths are not set here: ``layout.content_width_requests`` measures the
 # widest rendered cell in each column, hand-typed content included.
 
@@ -292,7 +293,7 @@ def _right_hand_panel(sheet_id: int) -> list[dict[str, Any]]:
 
 
 def row_height_requests(sheet_id: int, rows: int) -> list[dict[str, Any]]:
-    """The reference's uniform 12.75 pt row height."""
+    """One uniform row height for the whole tab, title and header rows included."""
     return [
         {
             "updateDimensionProperties": {
@@ -302,37 +303,10 @@ def row_height_requests(sheet_id: int, rows: int) -> list[dict[str, Any]]:
                     "startIndex": 0,
                     "endIndex": rows,
                 },
-                "properties": {"pixelSize": 17},
+                "properties": {"pixelSize": _ROW_HEIGHT},
                 "fields": "pixelSize",
             }
         }
-    ]
-
-
-def header_height_requests(sheet_id: int) -> list[dict[str, Any]]:
-    """Taller title and header rows, above the uniform 12.75 pt body height."""
-    rows = (
-        _SUMMARY_TITLE_ROW,
-        _SUMMARY_HEADER_ROW,
-        _BALANCE_TITLE_ROW,
-        _BALANCE_HEADER_ROW,
-        _INCOME_TITLE_ROW,
-        _INCOME_HEADER_ROW,
-    )
-    return [
-        {
-            "updateDimensionProperties": {
-                "range": {
-                    "sheetId": sheet_id,
-                    "dimension": "ROWS",
-                    "startIndex": row - 1,
-                    "endIndex": row,
-                },
-                "properties": {"pixelSize": _TITLE_ROW_HEIGHT},
-                "fields": "pixelSize",
-            }
-        }
-        for row in rows
     ]
 
 
