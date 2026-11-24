@@ -207,12 +207,28 @@ def test_summary_table_sums_income_and_subtracts_both_expense_blocks() -> None:
     assert _cell(grid, SUMMARY_INCOME_ROW, J) == "Ingresos totales"
     assert _cell(grid, SUMMARY_INCOME_ROW, K) == "=SUM(K4:K10)"
     assert _cell(grid, SUMMARY_EXPENSE_ROW, J) == "Gastos míos"
-    assert _cell(grid, SUMMARY_EXPENSE_ROW, K) == '=-SUMIF($E$4:$E$403,"<0",$E$4:$E$403)'
+    assert _cell(grid, SUMMARY_EXPENSE_ROW, K) == "=-SUMPRODUCT($E$4:$E$403*($E$4:$E$403<0))"
     assert _cell(grid, SUMMARY_SHARED_ROW, J) == "Gastos comunes"
     assert _cell(grid, SUMMARY_SHARED_ROW, K) == "=H53"
     assert _cell(grid, SUMMARY_SHARED_ROW + 1, J) is None  # blank row before the total
     assert _cell(grid, SUMMARY_TOTAL_ROW, J) == "Total"
     assert _cell(grid, SUMMARY_TOTAL_ROW, K) == "=K14-K15-K16"
+
+
+def test_no_formula_depends_on_the_spreadsheet_locale() -> None:
+    # The spreadsheet runs in ``es_ES``, where Sheets separates formula arguments with
+    # ``;`` and commas are decimal marks, so a comma-separated ``SUMIF`` is stored but
+    # renders ``#ERROR!``. Every formula the layout writes must avoid both separators.
+    grid = build_month_grid([_expense()], [AccountBalance(bank="Revolut", amount=None)])
+
+    formulas = [
+        cell for row in grid for cell in row if isinstance(cell, str) and cell.startswith("=")
+    ]
+
+    assert formulas, "the layout is expected to write formulas"
+    for formula in formulas:
+        assert "," not in formula, formula
+        assert ";" not in formula, formula
 
 
 def test_summary_is_positioned_independently_of_the_catalogue_length() -> None:
@@ -260,9 +276,10 @@ def test_balance_rows_keep_the_supplied_order_and_end_with_the_total() -> None:
     grid = build_month_grid([], balances)
 
     assert _cell(grid, BALANCE_TITLE_ROW, J) == "SALDO CUENTAS"
+    # The second label matches the panel's, like the owner's capture.
     assert [_cell(grid, BALANCE_HEADER_ROW, column) for column in (J, K)] == [
         "CUENTA",
-        "SALDO",
+        "CANTIDAD",
     ]
     assert _cell(grid, BALANCE_FIRST_ROW, J) == "ING España"
     assert _cell(grid, BALANCE_FIRST_ROW, K) == 1234.5
@@ -270,7 +287,7 @@ def test_balance_rows_keep_the_supplied_order_and_end_with_the_total() -> None:
     assert _cell(grid, BALANCE_FIRST_ROW + 1, K) == 99.99
 
     total_row = BALANCE_FIRST_ROW + 2
-    assert _cell(grid, total_row, J) == "Total"
+    assert _cell(grid, total_row, J) == "TOTAL"
     assert _cell(grid, total_row, K) == "=SUM(K22:K23)"
     assert _cell(grid, total_row + 1, J) is None
     assert _cell(grid, total_row + 1, K) is None
@@ -303,7 +320,7 @@ def test_all_balances_missing_leave_cells_empty_but_keep_the_total_range() -> No
     grid = build_month_grid([], balances)
 
     total_row = BALANCE_FIRST_ROW + len(balances)
-    assert _cell(grid, total_row, J) == "Total"
+    assert _cell(grid, total_row, J) == "TOTAL"
     assert _cell(grid, total_row, K) == "=SUM(K22:K22)"
     assert _cell(grid, BALANCE_FIRST_ROW, K) is None
 
@@ -340,7 +357,7 @@ def test_balance_panel_exists_even_without_balances() -> None:
 
     assert _cell(grid, BALANCE_TITLE_ROW, J) == "SALDO CUENTAS"
     assert _cell(grid, BALANCE_HEADER_ROW, J) == "CUENTA"
-    assert _cell(grid, BALANCE_FIRST_ROW, J) == "Total"
+    assert _cell(grid, BALANCE_FIRST_ROW, J) == "TOTAL"
     assert _cell(grid, BALANCE_FIRST_ROW, K) is None
     assert _cell(grid, BALANCE_FIRST_ROW + 1, J) is None
     assert _cell(grid, BALANCE_FIRST_ROW + 1, K) is None
@@ -423,7 +440,7 @@ def test_a_runaway_description_stops_at_the_maximum_width() -> None:
 
 
 def test_a_formula_does_not_widen_its_column() -> None:
-    widths = column_widths([["", "FECHA", "BANCO", '=SUMIF($E$4:$E$403,"<0",$E$4:$E$403)']])
+    widths = column_widths([["", "FECHA", "BANCO", "=-SUMPRODUCT($E$4:$E$403*($E$4:$E$403<0))"]])
 
     # The source text is not the width the cell renders at, so D stays at the floor.
     assert widths[4] == 90

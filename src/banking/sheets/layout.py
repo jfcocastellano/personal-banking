@@ -233,11 +233,15 @@ _MAX_BALANCE_ROWS = 8
 _SUMMARY_PANEL_LAST_ROW = _summary_panel_last_row(_MAX_BALANCE_ROWS)  # 30
 
 _INCOME_TOTAL_FORMULA = f"=SUM({_INCOME_RANGE})"
-_SPEND_BODY = f'SUMIF({_AMOUNT_RANGE},"<0",{_AMOUNT_RANGE})'
-_SPEND_FORMULA = f"={_SPEND_BODY}"
 # Expenses are shown positive and subtracted from the income, so the outcome reads
 # like the owner's ledger: 368.39 - 1735.98 - 800.00 = -2167.59.
-_OWN_EXPENSE_FORMULA = f"=-{_SPEND_BODY}"
+#
+# The spreadsheet is in the ``es_ES`` locale, and there Sheets parses formulas with
+# its own argument separator: ``SUMIF($E$4:$E$403,"<0",$E$4:$E$403)`` is stored as a
+# formula but renders ``#ERROR!`` because a comma is a decimal mark there and the
+# separator must be ``;``. ``SUMPRODUCT`` with one argument has no separator at all,
+# so the same text works in any locale; blanks multiply to zero and drop out.
+_OWN_EXPENSE_FORMULA = f"=-SUMPRODUCT({_AMOUNT_RANGE}*({_AMOUNT_RANGE}<0))"
 _SHARED_TOTAL_FORMULA = f"=SUM(H{_CATEGORY_FIRST_ROW}:H{_CATEGORY_LAST_ROW})"
 _SHARED_TOTAL_CELL_FORMULA = f"=H{_CATEGORY_TOTAL_ROW}"
 _SUMMARY_TOTAL_FORMULA = f"=K{_SUMMARY_INCOME_ROW}-K{_SUMMARY_EXPENSE_ROW}-K{_SUMMARY_SHARED_ROW}"
@@ -500,7 +504,7 @@ def _place_summary(place: Place) -> None:
 def _place_balances(place: Place, balances: Sequence[AccountBalance]) -> None:
     place(_BALANCE_TITLE_ROW, _COL_J, _BALANCE_TITLE)
     place(_BALANCE_HEADER_ROW, _COL_J, "CUENTA")
-    place(_BALANCE_HEADER_ROW, _COL_K, "SALDO")
+    place(_BALANCE_HEADER_ROW, _COL_K, _PANEL_HEADERS[1])
 
     for offset, balance in enumerate(balances):
         row = _BALANCE_FIRST_ROW + offset
@@ -509,7 +513,8 @@ def _place_balances(place: Place, balances: Sequence[AccountBalance]) -> None:
             place(row, _COL_K, float(balance.amount))
 
     total_row = _BALANCE_FIRST_ROW + len(balances)
-    place(total_row, _COL_J, "Total")
+    # ``TOTAL`` in capitals, like the owner's capture; the summary keeps its ``Total``.
+    place(total_row, _COL_J, "TOTAL")
     if balances:
         # SUM ignores the blank cells of accounts without a reported balance, so
         # the range stays stable when the user later types one in by hand.

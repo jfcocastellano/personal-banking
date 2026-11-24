@@ -153,14 +153,14 @@ del escritor.
 | 12 | `RESUMEN MES` (título, merge `J:K`) |
 | 13 | cabecera `CONCEPTO` / `CANTIDAD` |
 | 14 | Ingresos totales → `=SUM(K4:K10)` |
-| 15 | Gastos míos → `=-SUMIF($E$4:$E$403,"<0",$E$4:$E$403)` |
+| 15 | Gastos míos → `=-SUMPRODUCT($E$4:$E$403*($E$4:$E$403<0))` |
 | 16 | Gastos comunes → `=H53` |
 | 17 | en blanco |
 | 18 | Total → `=K14-K15-K16` |
 | 20 | `SALDO CUENTAS` (título, merge `J:K`) |
-| 21 | cabecera `CUENTA` / `SALDO` |
+| 21 | cabecera `CUENTA` / `CANTIDAD` |
 | 22-29 | hasta ocho cuentas |
-| 30 | Total de saldos |
+| 30 | `TOTAL` de saldos |
 
 Constantes a rehacer en `layout.py`: `_SUMMARY_FIRST_ROW`, `_SUMMARY_EXPENSE_ROW`,
 `_SUMMARY_TOTAL_ROW`, `_BALANCE_TITLE_ROW`, `_BALANCE_HEADER_ROW`, `_BALANCE_FIRST_ROW`,
@@ -183,19 +183,27 @@ Constantes nuevas en `layout.py`: `_INCOME_TITLE_ROW=2`, `_INCOME_HEADER_ROW=3`,
 `_BALANCE_HEADER_ROW=21`, `_BALANCE_FIRST_ROW=22`, `_SUMMARY_PANEL_LAST_ROW=30`, y la
 tupla `INCOME_LABELS`.
 
-Fórmulas finales: `K14 =SUM(K4:K10)`, `K15 =-SUMIF($E$4:$E$403,"<0",$E$4:$E$403)`,
-`K16 =H53`, `K18 =K14-K15-K16`. Las dos fórmulas de gasto comparten cuerpo
-(`_SPEND_BODY`) para que el signo no se duplique: la primera versión generaba
-`=-=SUMIF(...)` y el test del resumen lo cazó antes de llegar al documento.
+Fórmulas finales: `K14 =SUM(K4:K10)`, `K15 =-SUMPRODUCT($E$4:$E$403*($E$4:$E$403<0))`,
+`K16 =H53`, `K18 =K14-K15-K16`. La versión con `SUMIF` de tres argumentos
+(`_SPEND_BODY`) se guardaba como fórmula pero se pintaba `#ERROR!` en la hoja real: está
+en `es_ES` y allí Sheets separa argumentos con `;` y lee la coma como marca decimal. El
+`SUMPRODUCT` de un argumento da el mismo total sin separadores, así que el texto de la
+fórmula vale en cualquier idioma; un test recorre el grid y exige que ninguna fórmula
+lleve `,` ni `;`.
 
 Escritura (`_write_summary_region`): si la fila 12 columna J no dice `RESUMEN MES`, la
 pestaña está en la geometría vieja y se limpia desde `J2` (una sola vez); a partir de ahí
 solo `J12:K30`. El rango de formato de dinero empieza en `K4`, de modo que los importes
 del dueño también se ven como euros.
 
-`style._right_hand_panel` repinta las tres bandas (ingresos verde, resumen amarillo
-ligero `FFFF99` con `CONCEPTO`/`CANTIDAD` en blanco, saldos azul claro) y
-`layout_requests` fusiona `J12:K12` y `J20:K20` además de las bandas de la fila 2.
+`style._right_hand_panel` repinta las tres bandas y `layout_requests` fusiona
+`J12:K12` y `J20:K20` además de las bandas de la fila 2. Los colores salen de la captura
+que mandó el dueño (`2026-11-24`, OCR con `tesseract -l spa`): cada bloque lleva una
+banda de título **oscura** con letras blancas encima de una banda de cabecera más clara
+del mismo tono —`INGRESOS` `9BBB59` sobre `92D050`, `RESUMEN MES` `4F81BD` sobre
+`548DD4`, `SALDO CUENTAS` `C0504D` sobre `FABF8F`— y el amarillo `FFDE00` desapareció.
+De la captura también salieron los rótulos `CANTIDAD` en la cabecera de saldos y el
+`TOTAL` en mayúsculas de la última fila.
 
 El resumen nació sin fondo («no tiene acento propio», pedido del 2026-11-22) y el
 2026-11-23 el dueño pidió **amarillo en el título y la cabecera**, con las letras de
@@ -242,10 +250,10 @@ solo necesita añadirse a `CATEGORIES`.
 ancho (`_apply_geometry`). Anchos medidos en `2026-11` tras
 aplicarlo: `B` 110, `C` 110, `D` 400, `E` 130, `G` 200, `H` 130, `J` 200, `K` 130.
 
-Tests: `tests/unit/test_layout_grid.py` (21), `tests/unit/test_layout_writer.py` (31,
+Tests: `tests/unit/test_layout_grid.py` (31), `tests/unit/test_layout_writer.py` (35,
 incluye migración desde la geometría vieja y que `K4:K10` sobrevive a los refrescos) y
-`tests/unit/sheets/test_style.py` (4, payload puro: geometría correcta y ningún request
-escribe valores).
+`tests/unit/sheets/test_style.py` (7, payload puro: geometría, colores de la captura y
+ningún request escribe valores).
 
 Aplicado a `2026-11` por API: se deshizo el merge viejo `J8:K8`, se reescribió el panel
 con el mismo camino que usa el refresco, se fusionaron los títulos nuevos y se aplicó

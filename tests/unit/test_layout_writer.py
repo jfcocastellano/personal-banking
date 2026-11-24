@@ -54,7 +54,7 @@ SUMMARY_WRITE = f"J{SUMMARY_TITLE_ROW}"
 INCOME_RESET_CLEAR = f"J{INCOME_TITLE_ROW}:K{SUMMARY_LAST_ROW}"
 INCOME_RESET_WRITE = f"J{INCOME_TITLE_ROW}"
 INCOME_TOTAL_FORMULA = "=SUM(K4:K10)"
-OWN_EXPENSE_FORMULA = '=-SUMIF($E$4:$E$403,"<0",$E$4:$E$403)'
+OWN_EXPENSE_FORMULA = "=-SUMPRODUCT($E$4:$E$403*($E$4:$E$403<0))"
 SUMMARY_TOTAL_FORMULA = "=K14-K15-K16"
 
 
@@ -499,7 +499,7 @@ def test_second_run_rewrites_the_panel_with_user_entered_so_formulas_evaluate() 
     assert rows[6] == ["Total", SUMMARY_TOTAL_FORMULA]
     assert rows[BALANCE_TITLE_ROW - SUMMARY_TITLE_ROW] == ["SALDO CUENTAS", None]
     assert rows[BALANCE_FIRST_ROW - SUMMARY_TITLE_ROW] == ["ING España", 1234.5]
-    assert rows[BALANCE_FIRST_ROW - SUMMARY_TITLE_ROW + 1] == ["Total", "=SUM(K22:K22)"]
+    assert rows[BALANCE_FIRST_ROW - SUMMARY_TITLE_ROW + 1] == ["TOTAL", "=SUM(K22:K22)"]
     assert rows[BALANCE_FIRST_ROW - SUMMARY_TITLE_ROW + 2] == [None, None]
     assert rows[-1] == [None, None]
 
@@ -563,7 +563,7 @@ def test_panel_that_shrank_clears_the_rows_of_dropped_accounts() -> None:
     assert sheet.cells[(BALANCE_FIRST_ROW, 10)] == "ING España"
     assert sheet.cells[(BALANCE_FIRST_ROW, 11)] == 11.0
     assert sheet.cells[(BALANCE_FIRST_ROW + 1, 10)] == "Revolut"
-    assert sheet.cells[(BALANCE_FIRST_ROW + 2, 10)] == "Total"
+    assert sheet.cells[(BALANCE_FIRST_ROW + 2, 10)] == "TOTAL"
 
 
 def test_empty_month_still_refreshes_the_panel() -> None:
@@ -675,7 +675,7 @@ def test_a_tab_in_the_old_geometry_is_reset_once_from_the_income_title() -> None
         for column in (10, 11):
             sheet.cells.pop((row, column), None)
     sheet.cells[(4, 10)] = "Ingresos"
-    sheet.cells[(4, 11)] = '=SUMIF($E$4:$E$403,">0",$E$4:$E$403)'
+    sheet.cells[(4, 11)] = "=-SUMPRODUCT($E$4:$E$403*($E$4:$E$403<0))"
     sheet.cells[(8, 10)] = "SALDO CUENTAS"
     sheet.cells[(10, 10)] = "ING España"
     sheet.cells[(10, 11)] = 1234.5
