@@ -155,12 +155,12 @@ del escritor.
 | 14 | Ingresos totales → `=SUM(K4:K10)` |
 | 15 | Gastos míos → `=-SUMPRODUCT($E$4:$E$403*($E$4:$E$403<0))` |
 | 16 | Gastos comunes → `=H53` |
-| 17 | en blanco |
-| 18 | Total → `=K14-K15-K16` |
-| 20 | `SALDO CUENTAS` (título, merge `J:K`) |
-| 21 | cabecera `CUENTA` / `CANTIDAD` |
-| 22-29 | hasta ocho cuentas |
-| 30 | `TOTAL` de saldos |
+| 17 | Total → `=K14-K15-K16` |
+| 18 | en blanco |
+| 19 | `SALDO CUENTAS` (título, merge `J:K`) |
+| 20 | cabecera `CUENTA` / `CANTIDAD` |
+| 21-28 | hasta ocho cuentas |
+| 29 | `TOTAL` de saldos |
 
 Constantes a rehacer en `layout.py`: `_SUMMARY_FIRST_ROW`, `_SUMMARY_EXPENSE_ROW`,
 `_SUMMARY_TOTAL_ROW`, `_BALANCE_TITLE_ROW`, `_BALANCE_HEADER_ROW`, `_BALANCE_FIRST_ROW`,
@@ -197,11 +197,16 @@ solo `J12:K30`. El rango de formato de dinero empieza en `K4`, de modo que los i
 del dueño también se ven como euros.
 
 `style._right_hand_panel` repinta las tres bandas y `layout_requests` fusiona
-`J12:K12` y `J20:K20` además de las bandas de la fila 2. Los colores salen de la captura
+`J12:K12` y `J19:K19` además de las bandas de la fila 2. Los colores salen de la captura
 que mandó el dueño (`2026-11-24`, OCR con `tesseract -l spa`): cada bloque lleva una
 banda de título **oscura** con letras blancas encima de una banda de cabecera más clara
 del mismo tono —`INGRESOS` `9BBB59` sobre `92D050`, `RESUMEN MES` `4F81BD` sobre
 `548DD4`, `SALDO CUENTAS` `C0504D` sobre `FABF8F`— y el amarillo `FFDE00` desapareció.
+La fila en blanco que separaba `Gastos comunes` del `Total` del resumen se quitó el
+2026-11-24 a petición del dueño: el `Total` va en la 17, justo debajo, y el bloque de
+saldos sube una fila (título en `J19`) para que el hueco entre bloques siga siendo de una
+sola fila, como entre `INGRESOS` y `RESUMEN MES`.
+
 De la captura también salieron los rótulos `CANTIDAD` en la cabecera de saldos y el
 `TOTAL` en mayúsculas de la última fila, y la alineación: conceptos y cabeceras a la
 izquierda, importes centrados (en la captura los seis saldos giran alrededor de la misma

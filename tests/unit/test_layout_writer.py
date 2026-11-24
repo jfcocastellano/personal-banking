@@ -41,13 +41,13 @@ SUMMARY_HEADER_ROW = 13
 SUMMARY_INCOME_ROW = 14
 SUMMARY_EXPENSE_ROW = 15
 SUMMARY_SHARED_ROW = 16
-SUMMARY_TOTAL_ROW = 18
-BALANCE_TITLE_ROW = 20
-BALANCE_HEADER_ROW = 21
-BALANCE_FIRST_ROW = 22
+SUMMARY_TOTAL_ROW = 17
+BALANCE_TITLE_ROW = 19
+BALANCE_HEADER_ROW = 20
+BALANCE_FIRST_ROW = 21
 # Fixed floor the update path clears: four connectors today, eight slots in the
 # panel, so a panel that shrank never leaves a stale row behind.
-SUMMARY_LAST_ROW = 30
+SUMMARY_LAST_ROW = 29
 SUMMARY_CLEAR = f"J{SUMMARY_TITLE_ROW}:K{SUMMARY_LAST_ROW}"
 SUMMARY_WRITE = f"J{SUMMARY_TITLE_ROW}"
 # A tab still in the pre-022 geometry is reset once from the income title down.
@@ -385,7 +385,7 @@ def test_creation_merges_the_five_title_ranges() -> None:
     writer.write("doc-1", "2026-08 Gastos", [_expense()], [_balance()])
 
     sheet = spreadsheet.sheets["2026-08 Gastos"]
-    assert sheet.merged == ["B2:E2", "G2:H2", "J2:K2", "J12:K12", "J20:K20"]
+    assert sheet.merged == ["B2:E2", "G2:H2", "J2:K2", "J12:K12", "J19:K19"]
 
 
 def test_creation_with_an_empty_month_also_merges_the_titles() -> None:
@@ -399,7 +399,7 @@ def test_creation_with_an_empty_month_also_merges_the_titles() -> None:
         "G2:H2",
         "J2:K2",
         "J12:K12",
-        "J20:K20",
+        "J19:K19",
     ]
 
 
@@ -410,7 +410,7 @@ def test_creation_merges_after_the_grid_write_and_keeps_the_title_text() -> None
     writer.write("doc-1", "2026-08 Gastos", [], [])
 
     sheet = spreadsheet.sheets["2026-08 Gastos"]
-    assert sheet.merged == ["B2:E2", "G2:H2", "J2:K2", "J12:K12", "J20:K20"]
+    assert sheet.merged == ["B2:E2", "G2:H2", "J2:K2", "J12:K12", "J19:K19"]
     assert sheet.cells[(2, 2)] == "GASTOS"
     assert sheet.cells[(2, 7)] == "GASTOS COMUNES"
     assert sheet.cells[(2, 10)] == "INGRESOS"
@@ -429,7 +429,7 @@ def test_update_never_merges_again() -> None:
 
     writer.write("doc-1", "2026-08 Gastos", [_expense(day=2)], [_balance()])
 
-    assert creation_merges == ["B2:E2", "G2:H2", "J2:K2", "J12:K12", "J20:K20"]
+    assert creation_merges == ["B2:E2", "G2:H2", "J2:K2", "J12:K12", "J19:K19"]
     assert sheet.merged == creation_merges
     assert sheet.cleared == [EXPENSE_REGION, EXPENSE_REGION, SUMMARY_CLEAR]
 
@@ -495,11 +495,11 @@ def test_second_run_rewrites_the_panel_with_user_entered_so_formulas_evaluate() 
     assert rows[2] == ["Ingresos totales", INCOME_TOTAL_FORMULA]
     assert rows[3] == ["Gastos míos", OWN_EXPENSE_FORMULA]
     assert rows[4] == ["Gastos comunes", "=H53"]
-    assert rows[5] == [None, None]
-    assert rows[6] == ["Total", SUMMARY_TOTAL_FORMULA]
+    # No blank row between "Gastos comunes" and "Total", as the owner asked.
+    assert rows[5] == ["Total", SUMMARY_TOTAL_FORMULA]
     assert rows[BALANCE_TITLE_ROW - SUMMARY_TITLE_ROW] == ["SALDO CUENTAS", None]
     assert rows[BALANCE_FIRST_ROW - SUMMARY_TITLE_ROW] == ["ING España", 1234.5]
-    assert rows[BALANCE_FIRST_ROW - SUMMARY_TITLE_ROW + 1] == ["TOTAL", "=SUM(K22:K22)"]
+    assert rows[BALANCE_FIRST_ROW - SUMMARY_TITLE_ROW + 1] == ["TOTAL", "=SUM(K21:K21)"]
     assert rows[BALANCE_FIRST_ROW - SUMMARY_TITLE_ROW + 2] == [None, None]
     assert rows[-1] == [None, None]
 
@@ -522,7 +522,7 @@ def test_second_run_with_different_balances_changes_the_panel_values() -> None:
     assert sheet.cells[(BALANCE_FIRST_ROW, 11)] == 77.25
     assert sheet.cells[(BALANCE_FIRST_ROW + 1, 10)] == "Revolut"
     assert sheet.cells[(BALANCE_FIRST_ROW + 1, 11)] == 5.0
-    assert sheet.cells[(BALANCE_FIRST_ROW + 2, 11)] == "=SUM(K22:K23)"
+    assert sheet.cells[(BALANCE_FIRST_ROW + 2, 11)] == "=SUM(K21:K22)"
 
 
 def test_panel_that_shrank_clears_the_rows_of_dropped_accounts() -> None:

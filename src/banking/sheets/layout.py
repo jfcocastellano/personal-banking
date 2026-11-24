@@ -202,18 +202,18 @@ INCOME_LABELS: tuple[str, ...] = (
 _INCOME_LAST_ROW = _INCOME_FIRST_ROW + len(INCOME_LABELS) - 1  # 10
 _INCOME_RANGE = f"K{_INCOME_FIRST_ROW}:K{_INCOME_LAST_ROW}"
 
-# One blank row separates the income table from the summary, and another one
-# separates the three expense figures from the outcome.
+# One blank row separates the income table from the summary and the summary from the
+# balances block; inside the summary the outcome follows the three figures directly.
 _SUMMARY_TITLE_ROW = _INCOME_LAST_ROW + 2  # 12
 _SUMMARY_HEADER_ROW = _SUMMARY_TITLE_ROW + 1  # 13
 _SUMMARY_INCOME_ROW = _SUMMARY_HEADER_ROW + 1  # 14
 _SUMMARY_EXPENSE_ROW = _SUMMARY_INCOME_ROW + 1  # 15
 _SUMMARY_SHARED_ROW = _SUMMARY_EXPENSE_ROW + 1  # 16
-_SUMMARY_TOTAL_ROW = _SUMMARY_SHARED_ROW + 2  # 18
+_SUMMARY_TOTAL_ROW = _SUMMARY_SHARED_ROW + 1  # 17
 
-_BALANCE_TITLE_ROW = _SUMMARY_TOTAL_ROW + 2  # 20
-_BALANCE_HEADER_ROW = _BALANCE_TITLE_ROW + 1  # 21
-_BALANCE_FIRST_ROW = _BALANCE_HEADER_ROW + 1  # 22
+_BALANCE_TITLE_ROW = _SUMMARY_TOTAL_ROW + 2  # 19
+_BALANCE_HEADER_ROW = _BALANCE_TITLE_ROW + 1  # 20
+_BALANCE_FIRST_ROW = _BALANCE_HEADER_ROW + 1  # 21
 
 _SUMMARY_TITLE = "RESUMEN MES"
 _BALANCE_TITLE = "SALDO CUENTAS"
@@ -230,7 +230,7 @@ def _summary_panel_last_row(balance_count: int) -> int:
 # connectors, so a panel that shrank (an account removed, a bank offline)
 # leaves no stale row behind.
 _MAX_BALANCE_ROWS = 8
-_SUMMARY_PANEL_LAST_ROW = _summary_panel_last_row(_MAX_BALANCE_ROWS)  # 30
+_SUMMARY_PANEL_LAST_ROW = _summary_panel_last_row(_MAX_BALANCE_ROWS)  # 29
 
 _INCOME_TOTAL_FORMULA = f"=SUM({_INCOME_RANGE})"
 # Expenses are shown positive and subtracted from the income, so the outcome reads

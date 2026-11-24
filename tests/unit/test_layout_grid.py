@@ -42,10 +42,10 @@ SUMMARY_HEADER_ROW = 13
 SUMMARY_INCOME_ROW = 14
 SUMMARY_EXPENSE_ROW = 15
 SUMMARY_SHARED_ROW = 16
-SUMMARY_TOTAL_ROW = 18
-BALANCE_TITLE_ROW = 20
-BALANCE_HEADER_ROW = 21
-BALANCE_FIRST_ROW = 22
+SUMMARY_TOTAL_ROW = 17
+BALANCE_TITLE_ROW = 19
+BALANCE_HEADER_ROW = 20
+BALANCE_FIRST_ROW = 21
 
 
 def _cell(grid: list[list[object]], sheet_row: int, column: int) -> object:
@@ -210,8 +210,9 @@ def test_summary_table_sums_income_and_subtracts_both_expense_blocks() -> None:
     assert _cell(grid, SUMMARY_EXPENSE_ROW, K) == "=-SUMPRODUCT($E$4:$E$403*($E$4:$E$403<0))"
     assert _cell(grid, SUMMARY_SHARED_ROW, J) == "Gastos comunes"
     assert _cell(grid, SUMMARY_SHARED_ROW, K) == "=H53"
-    assert _cell(grid, SUMMARY_SHARED_ROW + 1, J) is None  # blank row before the total
+    # The owner asked for the blank row between "Gastos comunes" and "Total" to go.
     assert _cell(grid, SUMMARY_TOTAL_ROW, J) == "Total"
+    assert _cell(grid, SUMMARY_TOTAL_ROW - 1, J) == "Gastos comunes"
     assert _cell(grid, SUMMARY_TOTAL_ROW, K) == "=K14-K15-K16"
 
 
@@ -288,7 +289,7 @@ def test_balance_rows_keep_the_supplied_order_and_end_with_the_total() -> None:
 
     total_row = BALANCE_FIRST_ROW + 2
     assert _cell(grid, total_row, J) == "TOTAL"
-    assert _cell(grid, total_row, K) == "=SUM(K22:K23)"
+    assert _cell(grid, total_row, K) == "=SUM(K21:K22)"
     assert _cell(grid, total_row + 1, J) is None
     assert _cell(grid, total_row + 1, K) is None
     assert len(grid) == CATEGORY_TOTAL_ROW
@@ -311,7 +312,7 @@ def test_balance_without_amount_leaves_the_cell_empty_and_out_of_the_total() -> 
     assert _cell(grid, BALANCE_FIRST_ROW + 2, J) == "Revolut"
     # The total is a range over every balance row: SUM skips the blank cell, so a
     # hand-typed balance in it would be picked up later.
-    assert _cell(grid, BALANCE_FIRST_ROW + 3, K) == "=SUM(K22:K24)"
+    assert _cell(grid, BALANCE_FIRST_ROW + 3, K) == "=SUM(K21:K23)"
 
 
 def test_all_balances_missing_leave_cells_empty_but_keep_the_total_range() -> None:
@@ -321,7 +322,7 @@ def test_all_balances_missing_leave_cells_empty_but_keep_the_total_range() -> No
 
     total_row = BALANCE_FIRST_ROW + len(balances)
     assert _cell(grid, total_row, J) == "TOTAL"
-    assert _cell(grid, total_row, K) == "=SUM(K22:K22)"
+    assert _cell(grid, total_row, K) == "=SUM(K21:K21)"
     assert _cell(grid, BALANCE_FIRST_ROW, K) is None
 
 
