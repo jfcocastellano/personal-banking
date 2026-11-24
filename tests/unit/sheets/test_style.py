@@ -18,7 +18,13 @@ from banking.sheets.layout import (
     _SUMMARY_TITLE_ROW,
     _SUMMARY_TOTAL_ROW,
 )
-from banking.sheets.style import AMOUNT_FORMAT, format_requests, layout_requests
+from banking.sheets.style import (
+    AMOUNT_FORMAT,
+    LIGHT_YELLOW,
+    WHITE,
+    format_requests,
+    layout_requests,
+)
 
 SHEET_ID = 7
 
@@ -68,6 +74,43 @@ def test_no_request_writes_a_cell_value() -> None:
         if repeat is not None:
             assert "userEnteredValue" not in repeat["cell"]
             assert "userEnteredValue" not in repeat["fields"]
+
+
+def _formats_at(requests: list[dict[str, Any]], row: int, column: int) -> list[dict[str, Any]]:
+    """Every ``repeatCell`` format covering that cell, in application order."""
+    formats: list[dict[str, Any]] = []
+    for request in requests:
+        repeat = request.get("repeatCell")
+        if repeat is None:
+            continue
+        grid = repeat["range"]
+        if (
+            grid["startRowIndex"] + 1 <= row <= grid["endRowIndex"]
+            and grid["startColumnIndex"] + 1 <= column <= grid["endColumnIndex"]
+        ):
+            formats.append(repeat["cell"]["userEnteredFormat"])
+    return formats
+
+
+def test_the_summary_headers_are_light_yellow_with_white_labels() -> None:
+    requests = format_requests(SHEET_ID)
+
+    title = _formats_at(requests, _SUMMARY_TITLE_ROW, 10)[-1]
+    header = _formats_at(requests, _SUMMARY_HEADER_ROW, 11)[-1]
+
+    assert title["backgroundColor"] == LIGHT_YELLOW
+    # The band's title stays black; only CONCEPTO/CANTIDAD go white.
+    assert "foregroundColor" not in title["textFormat"]
+    assert header["backgroundColor"] == LIGHT_YELLOW
+    assert header["textFormat"]["foregroundColor"] == WHITE
+
+
+def test_the_merged_summary_title_band_is_painted_the_same_yellow() -> None:
+    requests = layout_requests(SHEET_ID, column_count=12)
+
+    title = _formats_at(requests, _SUMMARY_TITLE_ROW, 11)[-1]
+
+    assert title["backgroundColor"] == LIGHT_YELLOW
 
 
 def test_the_money_pattern_is_the_reference_one() -> None:

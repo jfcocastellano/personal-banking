@@ -37,9 +37,9 @@ AMOUNT_FORMAT = "#,##0.00 _€"
 
 RED = {"red": 1.0, "green": 0.0, "blue": 0.0}
 GREEN = {"red": 0.34, "green": 0.82, "blue": 0.31}
-BLUE = {"red": 0.33, "green": 0.55, "blue": 0.83}
 ORANGE = {"red": 0.98, "green": 0.75, "blue": 0.56}
 LIGHT_BLUE = {"red": 0.74, "green": 0.84, "blue": 0.93}
+LIGHT_YELLOW = {"red": 1.0, "green": 1.0, "blue": 0.6}
 WHITE = {"red": 1.0, "green": 1.0, "blue": 1.0}
 
 _ROW_HEIGHT = 12.75
@@ -216,14 +216,15 @@ def _right_hand_panel(sheet_id: int) -> list[dict[str, Any]]:
             k,
             _cell_format(background=WHITE, bold=True, halign="CENTER", number_format=AMOUNT_FORMAT),
         ),
-        # RESUMEN MES: no accent of its own, as the owner asked.
+        # RESUMEN MES: light yellow band, like the owner's paper ledger, with the
+        # column labels in white on it. The title keeps black letters.
         _repeat(
             sheet_id,
             _SUMMARY_TITLE_ROW,
             _SUMMARY_TITLE_ROW,
             j,
             k,
-            _cell_format(background=WHITE, bold=True, halign="CENTER"),
+            _cell_format(background=LIGHT_YELLOW, bold=True, halign="CENTER"),
         ),
         _repeat(
             sheet_id,
@@ -231,7 +232,7 @@ def _right_hand_panel(sheet_id: int) -> list[dict[str, Any]]:
             _SUMMARY_HEADER_ROW,
             j,
             k,
-            _cell_format(background=WHITE, bold=True, halign="CENTER"),
+            _cell_format(background=LIGHT_YELLOW, bold=True, color=WHITE, halign="CENTER"),
         ),
         _repeat(
             sheet_id,
@@ -321,7 +322,10 @@ def layout_requests(sheet_id: int, *, column_count: int) -> list[dict[str, Any]]
     """
     j, k = _COL_J + 1, _COL_K + 1
     requests: list[dict[str, Any]] = []
-    for title_row, accent in ((_SUMMARY_TITLE_ROW, WHITE), (_BALANCE_TITLE_ROW, LIGHT_BLUE)):
+    for title_row, accent in (
+        (_SUMMARY_TITLE_ROW, LIGHT_YELLOW),
+        (_BALANCE_TITLE_ROW, LIGHT_BLUE),
+    ):
         requests.append(
             {
                 "mergeCells": {

@@ -193,9 +193,16 @@ pestaña está en la geometría vieja y se limpia desde `J2` (una sola vez); a p
 solo `J12:K30`. El rango de formato de dinero empieza en `K4`, de modo que los importes
 del dueño también se ven como euros.
 
-`style._right_hand_panel` repinta las tres bandas (ingresos verde, resumen blanco, saldos
-azul claro) y `layout_requests` fusiona `J12:K12` y `J20:K20` además de las bandas de la
-fila 2.
+`style._right_hand_panel` repinta las tres bandas (ingresos verde, resumen amarillo
+ligero `FFFF99` con `CONCEPTO`/`CANTIDAD` en blanco, saldos azul claro) y
+`layout_requests` fusiona `J12:K12` y `J20:K20` además de las bandas de la fila 2.
+
+El resumen nació sin fondo («no tiene acento propio», pedido del 2026-11-22) y el
+2026-11-23 el dueño pidió **amarillo ligero en el título y la cabecera**, con las letras
+de `CONCEPTO`/`CANTIDAD` en blanco como la cabecera de gastos comunes. `LIGHT_YELLOW`
+vive en `style.py` y se usa en los dos sitios que pintan la banda: el `repeatCell` del
+panel y el de `layout_requests`, para que el merge no la devuelva a blanco. El título
+conserva las letras negras.
 
 Tests: `tests/unit/test_layout_grid.py` (21), `tests/unit/test_layout_writer.py` (31,
 incluye migración desde la geometría vieja y que `K4:K10` sobrevive a los refrescos) y
