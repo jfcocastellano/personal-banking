@@ -206,10 +206,27 @@ panel y el de `layout_requests`, para que el merge no la devuelva a blanco. El t
 conserva las letras negras.
 
 En la misma petición, las cabeceras ganan aire: `header_height_requests` sube las filas
-de título y cabecera (2-3, 12-13, 20-21) a 28 px sobre los 17 px del cuerpo, y
-`layout_requests` cambia el `autoResizeDimensions` por anchos explícitos con holgura
-sobre el original (`G` 210 px, `J` 200 px, `K` 130 px; el libro de referencia pedía
-≈187/178/122 px). Se aplica también a los títulos de gastos y comunes, no solo al panel.
+de título y cabecera (2-3, 12-13, 20-21) a 28 px sobre los 17 px del cuerpo. Se aplica
+también a los títulos de gastos y comunes, no solo al panel.
+
+Después el dueño pidió que **las celdas de contenido también se ensanchen**: el ancho
+del mayor elemento más un poco de holgura. `layout.column_widths` lo calcula por columna
+(`B`, `C`, `D`, `E`, `G`, `H`, `J`, `K`; los separadores `A`, `F` e `I` no se tocan) con
+`7,8 px` por carácter + `28 px` de margen, redondeado a 5 px. Tres límites lo hacen
+usable:
+
+- **Suelo** de 90 px para cualquier columna.
+- **Suelos propios** en las columnas de importe (`E`, `H`, `K`, 130 px) y en `J`
+  (200 px): el contenido de hoy es corto, pero un `-1.735,98 €` o un importe tecleado
+  por el dueño necesita el hueco.
+- **Techo** de 400 px: un concepto de transferencia de 121 caracteres pedía 975 px y
+  habría empujado la tabla fuera de la pantalla; el texto se conserva, la columna para
+  de crecer.
+
+`LayoutWriter` lo aplica en las dos rutas, después de escribir: lee `get_all_values()`
+(valores ya renderizados, así una fórmula no cuenta por su texto) y manda los
+`updateDimensionProperties` en un `batch_update`. Anchos medidos en `2026-11` tras
+aplicarlo: `B` 110, `C` 110, `D` 400, `E` 130, `G` 200, `H` 130, `J` 200, `K` 130.
 
 Tests: `tests/unit/test_layout_grid.py` (21), `tests/unit/test_layout_writer.py` (31,
 incluye migración desde la geometría vieja y que `K4:K10` sobrevive a los refrescos) y

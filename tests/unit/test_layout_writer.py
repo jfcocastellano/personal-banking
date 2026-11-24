@@ -62,6 +62,7 @@ class FakeWorksheet:
 
     def __init__(self, title: str) -> None:
         self.title = title
+        self.id = 1
         self.cells: dict[tuple[int, int], Any] = {}
         self.full_updates: list[list[list[Any]]] = []
         self.region_updates: list[list[list[Any]]] = []
@@ -155,6 +156,15 @@ class FakeWorksheet:
             self.cleared.append(range_name)
             self._delete(first_row, last_row, 10, 11)
 
+    def get_all_values(self) -> list[list[str]]:
+        """The used range as text, like the real ``get_all_values`` does."""
+        max_row = max((row for row, _column in self.cells), default=0)
+        max_col = max((column for _row, column in self.cells), default=0)
+        return [
+            [str(self.cells.get((row, column), "")) for column in range(1, max_col + 1)]
+            for row in range(1, max_row + 1)
+        ]
+
     def row_values(self, row: int) -> list[Any]:
         """Row as gspread returns it: from column A to the last filled cell, gaps as ""."""
         filled = [column for (row_index, column) in self.cells if row_index == row]
@@ -182,6 +192,10 @@ class FakeSpreadsheet:
     def __init__(self) -> None:
         self.sheets: dict[str, FakeWorksheet] = {}
         self.added: list[tuple[str, int, int]] = []
+        self.batch_updates: list[dict[str, Any]] = []
+
+    def batch_update(self, body: dict[str, Any]) -> None:
+        self.batch_updates.append(body)
 
     def worksheet(self, title: str) -> FakeWorksheet:
         try:
@@ -211,6 +225,18 @@ class FakeClient:
 def _writer(spreadsheet: FakeSpreadsheet | None) -> tuple[LayoutWriter, FakeClient]:
     client = FakeClient(spreadsheet)
     return LayoutWriter(client=cast(gspread.Client, client)), client
+
+
+def _widths(spreadsheet: FakeSpreadsheet) -> dict[int, int]:
+    """Column widths from the last ``batch_update`` the writer issued."""
+    requests = spreadsheet.batch_updates[-1]["requests"]
+    return {
+        request["updateDimensionProperties"]["range"]["startIndex"] + 1: request[
+            "updateDimensionProperties"
+        ]["properties"]["pixelSize"]
+        for request in requests
+        if "updateDimensionProperties" in request
+    }
 
 
 def _expense(day: int = 1, bank: str = "ING España", description: str = "Compra") -> ExpenseRow:
@@ -875,3 +901,54 @@ def test_refresh_accepts_an_existing_but_empty_tab() -> None:
     )
 
     assert EXPENSE_REGION in worksheet.cleared
+
+
+def test_creation_sizes_the_content_columns_from_the_widest_cell() -> None:
+    spreadsheet = FakeSpreadsheet()
+    writer, _client = _writer(spreadsheet)
+
+    writer.write("doc-1", "2026-08 Gastos", [_expense()], [_balance()])
+
+    widths = _widths(spreadsheet)
+    # Only the content columns; the spacers A, F and I keep the default width.
+    assert set(widths) == {2, 3, 4, 5, 7, 8, 10, 11}
+    # ``DESCRIPCIÓN`` (11 characters) is the widest cell in D: 11 * 7.8 + 28 = 114,
+    # rounded up to the next 5 px.
+    assert widths[4] == 115
+    # J carries the summary labels, so the longest one sets the width.
+    assert widths[10] >= 150
+
+
+def test_a_longer_description_widens_its_column_on_the_next_run() -> None:
+    spreadsheet = FakeSpreadsheet()
+    writer, _client = _writer(spreadsheet)
+    writer.write("doc-1", "2026-08 Gastos", [_expense()], [_balance()])
+    before = _widths(spreadsheet)
+
+    writer.write(
+        "doc-1",
+        "2026-08 Gastos",
+        [_expense(description="Compra de material de oficina en la tienda del centro")],
+        [_balance()],
+    )
+
+    after = _widths(spreadsheet)
+    assert after[4] > before[4]
+    # The other columns are not disturbed by a longer description.
+    assert after[2] == before[2]
+    assert after[7] == before[7]
+
+
+def test_a_hand_typed_income_amount_widens_its_column() -> None:
+    spreadsheet = FakeSpreadsheet()
+    writer, _client = _writer(spreadsheet)
+    writer.write("doc-1", "2026-08 Gastos", [_expense()], [])
+    sheet = spreadsheet.sheets["2026-08 Gastos"]
+    before = _widths(spreadsheet)
+    sheet.cells[(4, 11)] = "123.456.789,00"  # the owner types Nómina by hand
+
+    writer.write("doc-1", "2026-08 Gastos", [_expense(day=2)], [])
+
+    after = _widths(spreadsheet)
+    assert after[11] > before[11]
+    assert after[11] >= len("123.456.789,00") * 7.8 + 28

@@ -17,7 +17,6 @@ from banking.sheets.layout import (
     _BALANCE_FIRST_ROW,
     _BALANCE_HEADER_ROW,
     _BALANCE_TITLE_ROW,
-    _COL_G,
     _COL_J,
     _COL_K,
     _INCOME_FIRST_ROW,
@@ -48,9 +47,8 @@ _ROW_HEIGHT = 12.75
 # Title and header rows get more room than the body so the bold labels breathe and
 # ``GASTOS COMUNES`` / ``CONCEPTO`` fit without looking cramped.
 _TITLE_ROW_HEIGHT = 28
-# Column widths in pixels: above what the reference needs (25.88 / 24.5 / 16
-# characters) so the longest label has a little slack instead of being cut.
-_COLUMN_WIDTHS = {_COL_G: 210, _COL_J: 200, _COL_K: 130}
+# Column widths are not set here: ``layout.content_width_requests`` measures the
+# widest rendered cell in each column, hand-typed content included.
 
 
 def _cell_format(
@@ -350,10 +348,9 @@ def layout_requests(sheet_id: int, *, column_count: int) -> list[dict[str, Any]]
     """Structural touches that are not pure cell formatting.
 
     Merges the two ``J:K`` title bands that sit below the header, so they centre
-    across both columns like the income title, gives the three text columns a width
-    with a little slack over their longest label, and leaves one empty column on the
-    far right. The trailing column is only inserted while the sheet still ends at
-    ``K``, so running this twice does not keep appending columns.
+    across both columns like the income title, and leaves one empty column on the far
+    right. The trailing column is only inserted while the sheet still ends at ``K``,
+    so running this twice does not keep appending columns.
     """
     j, k = _COL_J + 1, _COL_K + 1
     requests: list[dict[str, Any]] = []
@@ -384,21 +381,6 @@ def layout_requests(sheet_id: int, *, column_count: int) -> list[dict[str, Any]]
                 k,
                 _cell_format(background=accent, bold=True, halign="CENTER"),
             )
-        )
-    for column, width in _COLUMN_WIDTHS.items():
-        requests.append(
-            {
-                "updateDimensionProperties": {
-                    "range": {
-                        "sheetId": sheet_id,
-                        "dimension": "COLUMNS",
-                        "startIndex": column,
-                        "endIndex": column + 1,
-                    },
-                    "properties": {"pixelSize": width},
-                    "fields": "pixelSize",
-                }
-            }
         )
     if column_count <= _COL_K + 1:
         requests.append(

@@ -152,17 +152,3 @@ def test_the_title_and_header_rows_are_taller_than_the_body() -> None:
     # (20-21), so the left tables get the extra room too, not only the J:K panel.
     assert set(headers) == {2, 3, 12, 13, 20, 21}
     assert all(height > body[0] for height in headers.values())
-
-
-def test_the_text_columns_are_wider_than_their_longest_label_needs() -> None:
-    widths = {
-        request["updateDimensionProperties"]["range"]["startIndex"] + 1: request[
-            "updateDimensionProperties"
-        ]["properties"]["pixelSize"]
-        for request in layout_requests(SHEET_ID, column_count=12)
-        if "updateDimensionProperties" in request
-    }
-
-    # G (GASTOS COMUNES / categoría), J (concepto/cuenta) and K (cantidad/saldo).
-    assert widths == {7: 210, 10: 200, 11: 130}
-    assert all(width > 120 for width in widths.values())

@@ -17,6 +17,8 @@ from banking.sheets.layout import (
     AccountBalance,
     ExpenseRow,
     build_month_grid,
+    column_widths,
+    content_width_requests,
 )
 
 # Sheet coordinates from spec.md "Layout contract" and task 022's panel geometry.
@@ -347,3 +349,85 @@ def test_every_formula_is_a_string_starting_with_equals() -> None:
     ]
     assert len(formulas) == 5  # shared total, income SUM, own expenses, shared cell, outcome
     assert all(isinstance(formula, str) for formula in formulas)
+
+
+def test_column_widths_follow_the_widest_cell_plus_a_margin() -> None:
+    rows = [
+        [
+            "",
+            "FECHA",
+            "BANCO",
+            "DESCRIPCIÓN",
+            "IMPORTE",
+            "",
+            "CATEGORÍA",
+            "TOTAL",
+            "",
+            "CUENTA",
+            "",
+        ],
+        [
+            "",
+            "2026-08-01",
+            "ING España",
+            "Compra",
+            -10.0,
+            "",
+            "Alimentación",
+            10.0,
+            "",
+            "ING España",
+            1.0,
+        ],
+    ]
+
+    widths = column_widths(rows)
+
+    # Only the content columns: A, F and I are spacers between the blocks.
+    assert set(widths) == {2, 3, 4, 5, 7, 8, 10, 11}
+    assert all(width >= 90 for width in widths.values())
+    # The amount columns keep their floors: the sample amounts are short, but a
+    # real ``-1.735,98 €`` needs the room.
+    assert widths[5] == 130
+    assert widths[8] == 130
+    # J and K too: short summary labels today, typed figures tomorrow.
+    assert widths[10] == 200
+    assert widths[11] == 130
+    # The widest cell of each column plus the margin, rounded up to 5 px:
+    # "DESCRIPCIÓN" (11), "ING España" (10), "CATEGORÍA"/"Alimentación" (12, 9).
+    assert widths[4] == 115
+    assert widths[3] == 110
+    assert widths[7] == 125
+
+
+def test_a_longer_cell_only_widens_its_own_column() -> None:
+    short = column_widths([["", "FECHA", "BANCO", "Compra"]])
+    long = column_widths(
+        [["", "FECHA", "BANCO", "Compra de material de oficina en la tienda del centro"]]
+    )
+
+    assert long[4] > short[4]
+    assert long[2] == short[2]
+    assert long[3] == short[3]
+
+
+def test_a_runaway_description_stops_at_the_maximum_width() -> None:
+    widths = column_widths([["", "FECHA", "BANCO", "X" * 200]])
+
+    assert widths[4] == 400
+
+
+def test_a_formula_does_not_widen_its_column() -> None:
+    widths = column_widths([["", "FECHA", "BANCO", '=SUMIF($E$4:$E$403,"<0",$E$4:$E$403)']])
+
+    # The source text is not the width the cell renders at, so D stays at the floor.
+    assert widths[4] == 90
+
+
+def test_content_width_requests_target_the_content_columns_only() -> None:
+    requests = content_width_requests(7, [["", "FECHA", "BANCO", "Compra"]])
+
+    ranges = [
+        (request["updateDimensionProperties"]["range"]["startIndex"] + 1) for request in requests
+    ]
+    assert ranges == [2, 3, 4, 5, 7, 8, 10, 11]

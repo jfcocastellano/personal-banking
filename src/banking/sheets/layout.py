@@ -13,8 +13,9 @@ hand-typed shared amounts survive a regeneration (FR-009).
 """
 
 import logging
+import math
 import time
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
@@ -120,6 +121,21 @@ _COL_G = 6
 _COL_H = 7
 _COL_J = 9
 _COL_K = 10
+
+# Content columns take their width from the widest rendered cell plus a margin
+# (task 022: the owner asked for the widest element and a little slack). Columns A,
+# F and I are spacers between the blocks and keep their default width.
+_CONTENT_COLUMNS: tuple[int, ...] = (2, 3, 4, 5, 7, 8, 10, 11)  # B, C, D, E, G, H, J, K
+_CHAR_PX = 7.8
+_WIDTH_MARGIN = 28
+_MIN_COLUMN_WIDTH = 90
+# A single runaway description (a transfer memo can be 120 characters) must not push
+# the table off the screen; the cell keeps the text, the column stops growing.
+_MAX_COLUMN_WIDTH = 400
+# Floors for the columns whose content arrives later as a formatted amount (``E``,
+# ``H``, ``K``) or is typed by the owner (``K``): the panel keeps the room the owner
+# just approved and every amount column fits a full ``#,##0.00 €`` figure.
+_MIN_COLUMN_WIDTHS: dict[int, int] = {5: 130, 8: 130, 10: 200, 11: 130}
 
 _TITLE_ROW = 2
 _HEADER_ROW = 3
@@ -573,6 +589,67 @@ def _panel_is_current(worksheet: gspread.Worksheet) -> bool:
     return str(value).strip() == _SUMMARY_TITLE
 
 
+def _rendered_length(value: CellValue) -> int:
+    """Characters a cell occupies; formulas count as zero, their value is not known."""
+    if value is None:
+        return 0
+    text = str(value).strip()
+    if not text or text.startswith("="):
+        return 0
+    return len(text)
+
+
+def column_widths(rows: Iterable[Sequence[CellValue]]) -> dict[int, int]:
+    """Width in pixels per content column: widest rendered cell plus a margin.
+
+    Columns are 1-based, so ``B`` is 2. Strings starting with ``=`` are skipped: a
+    formula's width is not its source text, and the writer reads the sheet with
+    formulas already rendered.
+    """
+    longest: dict[int, int] = dict.fromkeys(_CONTENT_COLUMNS, 0)
+    for row in rows:
+        for column in _CONTENT_COLUMNS:
+            index = column - 1
+            if index < len(row):
+                longest[column] = max(longest[column], _rendered_length(row[index]))
+    widths: dict[int, int] = {}
+    for column in _CONTENT_COLUMNS:
+        needed = longest[column] * _CHAR_PX + _WIDTH_MARGIN
+        floor = _MIN_COLUMN_WIDTHS.get(column, _MIN_COLUMN_WIDTH)
+        widths[column] = min(_MAX_COLUMN_WIDTH, max(floor, math.ceil(needed / 5) * 5))
+    return widths
+
+
+def content_width_requests(
+    sheet_id: int, rows: Iterable[Sequence[CellValue]]
+) -> list[dict[str, object]]:
+    """``updateDimensionProperties`` requests that size the content columns."""
+    return [
+        {
+            "updateDimensionProperties": {
+                "range": {
+                    "sheetId": sheet_id,
+                    "dimension": "COLUMNS",
+                    "startIndex": column - 1,
+                    "endIndex": column,
+                },
+                "properties": {"pixelSize": width},
+                "fields": "pixelSize",
+            }
+        }
+        for column, width in column_widths(rows).items()
+    ]
+
+
+def _apply_content_widths(worksheet: gspread.Worksheet, spreadsheet: gspread.Spreadsheet) -> None:
+    """Fit every content column to its widest cell, after the values are written."""
+    try:
+        rows = worksheet.get_all_values()
+        spreadsheet.batch_update({"requests": content_width_requests(worksheet.id, rows)})
+    except gspread.exceptions.APIError as exc:
+        raise _translate_api_error(exc) from exc
+
+
 def _write_summary_region(worksheet: gspread.Worksheet, balances: Sequence[AccountBalance]) -> None:
     """Clear and rewrite the ``J:K`` panel from the summary down to its floor.
 
@@ -711,6 +788,9 @@ class LayoutWriter:
                 _ensure_not_raw_tab(worksheet)
                 _write_expense_region(worksheet, transactions)
                 _write_summary_region(worksheet, balances)
+            # Both paths: widths follow the content the tab now holds, hand-typed
+            # cells included, so a long description widens its column on its own.
+            _apply_content_widths(worksheet, spreadsheet)
         except (
             RawTabCollisionError,
             SheetsConfigError,
