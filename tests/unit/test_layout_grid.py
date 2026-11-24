@@ -14,11 +14,14 @@ from banking.sheets.layout import (
     CATEGORIES,
     INCOME_LABELS,
     MAX_EXPENSE_ROWS,
+    SHARED_SECTION_HEADERS,
     AccountBalance,
     ExpenseRow,
     build_month_grid,
     column_widths,
     content_width_requests,
+    shared_indent_requests,
+    shared_sub_item_rows,
 )
 
 # Sheet coordinates from spec.md "Layout contract" and task 022's panel geometry.
@@ -431,3 +434,66 @@ def test_content_width_requests_target_the_content_columns_only() -> None:
         (request["updateDimensionProperties"]["range"]["startIndex"] + 1) for request in requests
     ]
     assert ranges == [2, 3, 4, 5, 7, 8, 10, 11]
+
+
+def test_the_shared_expenses_tabulate_the_lines_that_hang_from_a_header() -> None:
+    rows = shared_sub_item_rows()
+
+    labels = [CATEGORIES[row - 4] for row in rows]
+    assert labels == [
+        "Mercadona",
+        "Consum",
+        "Otros",
+        "Petsitter",
+        "Día",
+        "Día",
+        "Día",
+        "Veterinario",
+        "Zooplus",
+        "Agua",
+        "Gas",
+        "Limpieza",
+        "Día",
+        "Día",
+        "Día",
+        "Día",
+        "Luz",
+        "Menaje",
+        "HBO",
+        "Spotify",
+        "AVE día",
+        "AVE día",
+        "AVE día",
+        "Motos alquiler",
+        "Taxi",
+        "VTC",
+        "Coche",
+        "Gasolina día",
+        "Gasolina día",
+        "Gasolina día",
+        "Gasolina día",
+        "Lavado",
+        "Parking",
+        "Peajes",
+        "Taller",
+    ]
+    # Every row is inside the block, and no section header is indented.
+    assert rows == tuple(sorted(rows))
+    assert all(CATEGORY_FIRST_ROW <= row <= CATEGORY_LAST_ROW for row in rows)
+    assert not set(rows) & {4 + CATEGORIES.index(h) for h in SHARED_SECTION_HEADERS}
+
+
+def test_every_section_header_exists_in_the_catalogue() -> None:
+    assert set(SHARED_SECTION_HEADERS) <= set(CATEGORIES)
+
+
+def test_the_indent_requests_touch_only_column_g() -> None:
+    requests = shared_indent_requests(7)
+
+    assert len(requests) == len(shared_sub_item_rows())
+    for request, row in zip(requests, shared_sub_item_rows(), strict=True):
+        repeat = request["repeatCell"]
+        assert repeat["range"]["startRowIndex"] + 1 == row
+        assert repeat["range"]["startColumnIndex"] == 6  # G, 0-based
+        assert repeat["range"]["endColumnIndex"] == 7
+        assert repeat["cell"]["userEnteredFormat"]["padding"]["left"] > 0

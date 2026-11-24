@@ -226,9 +226,19 @@ usable:
   habría empujado la tabla fuera de la pantalla; el texto se conserva, la columna para
   de crecer.
 
+El catálogo de gastos comunes es de dos niveles y también se tabula: `Mercadona`,
+`Consum`, `Otros`, `Petsitter`, los `Día`, `Zooplus`, `Agua`, `Gas`, `Limpieza`, `Luz`,
+`Menaje`, `HBO`, `Spotify`, los `AVE día`, `Motos alquiler`, `Taxi`, `VTC`, `Coche`, los
+`Gasolina día`, `Lavado`, `Parking`, `Peajes` y `Taller` van con 24 pt de sangría (35
+filas), mientras sus encabezados —`Alimentación`, `Gatos`, `Piso`, `Streaming`,
+`Transporte`…— quedan al ras. `layout.SHARED_SECTION_HEADERS` es el conjunto que no se
+indenta y `shared_sub_item_rows()` deriva el resto del catálogo, así que una línea nueva
+solo necesita añadirse a `CATEGORIES`.
+
 `LayoutWriter` lo aplica en las dos rutas, después de escribir: lee `get_all_values()`
-(valores ya renderizados, así una fórmula no cuenta por su texto) y manda los
-`updateDimensionProperties` en un `batch_update`. Anchos medidos en `2026-11` tras
+(valores ya renderizados, así una fórmula no cuenta por su texto) y manda en un mismo
+`batch_update` los `repeatCell` de la tabulación y los `updateDimensionProperties` del
+ancho (`_apply_geometry`). Anchos medidos en `2026-11` tras
 aplicarlo: `B` 110, `C` 110, `D` 400, `E` 130, `G` 200, `H` 130, `J` 200, `K` 130.
 
 Tests: `tests/unit/test_layout_grid.py` (21), `tests/unit/test_layout_writer.py` (31,

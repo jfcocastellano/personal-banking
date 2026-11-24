@@ -10,7 +10,6 @@ them touches the document.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
 from typing import Any
 
 from banking.sheets.layout import (
@@ -308,14 +307,6 @@ def row_height_requests(sheet_id: int, rows: int) -> list[dict[str, Any]]:
             }
         }
     ]
-
-
-def indent_requests(
-    sheet_id: int, rows: Sequence[int], column: int, points: float = 24.0
-) -> list[dict[str, Any]]:
-    """Indent single-column cells, like the ledger's tabulated sub-items."""
-    fmt: dict[str, Any] = {"padding": {"left": points}}
-    return [_repeat(sheet_id, row, row, column, column, fmt) for row in rows]
 
 
 def layout_requests(sheet_id: int, *, column_count: int) -> list[dict[str, Any]]:

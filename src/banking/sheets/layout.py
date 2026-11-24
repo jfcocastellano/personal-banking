@@ -103,6 +103,30 @@ CATEGORIES: tuple[str, ...] = (
     "*Otros",
 )
 
+# The catalogue is a two-level list: a section header (``Alimentación``, ``Gatos``,
+# ``Piso``, ``Streaming``, ``Transporte``...) followed by the concrete lines that hang
+# from it. The owner asked for those lines to be tabulated (indented) under their
+# header, as in the reference ledger, so this is the set that stays flush left.
+SHARED_SECTION_HEADERS: tuple[str, ...] = (
+    "Alimentación",
+    "Entradas",
+    "Farmacia",
+    "Garaje Mossen Fenollar",
+    "Recibos C.P",
+    "Gatos",
+    "Piso",
+    "Regalos",
+    "Restauración",
+    "Streaming",
+    "Tintorería",
+    "Transporte",
+    "Viajes",
+    "*Otros",
+)
+
+# Indent of a tabulated line, in points, so it reads as hanging from its header.
+SHARED_INDENT_POINTS = 24.0
+
 MAX_EXPENSE_ROWS = 400
 
 # Grid invariant, relied on by the writer and by anything reading this module's
@@ -589,6 +613,38 @@ def _panel_is_current(worksheet: gspread.Worksheet) -> bool:
     return str(value).strip() == _SUMMARY_TITLE
 
 
+def shared_sub_item_rows() -> tuple[int, ...]:
+    """Sheet rows in ``G`` of the catalogue lines that hang from a section header."""
+    return tuple(
+        _CATEGORY_FIRST_ROW + offset
+        for offset, category in enumerate(CATEGORIES)
+        if category not in SHARED_SECTION_HEADERS
+    )
+
+
+def shared_indent_requests(sheet_id: int) -> list[dict[str, object]]:
+    """``repeatCell`` requests that indent the tabulated shared-expense lines."""
+    column = _COL_G + 1  # 1-based for the A1-style range shape below
+    return [
+        {
+            "repeatCell": {
+                "range": {
+                    "sheetId": sheet_id,
+                    "startRowIndex": row - 1,
+                    "endRowIndex": row,
+                    "startColumnIndex": column - 1,
+                    "endColumnIndex": column,
+                },
+                "cell": {
+                    "userEnteredFormat": {"padding": {"left": SHARED_INDENT_POINTS}},
+                },
+                "fields": "userEnteredFormat.padding",
+            }
+        }
+        for row in shared_sub_item_rows()
+    ]
+
+
 def _rendered_length(value: CellValue) -> int:
     """Characters a cell occupies; formulas count as zero, their value is not known."""
     if value is None:
@@ -641,11 +697,20 @@ def content_width_requests(
     ]
 
 
-def _apply_content_widths(worksheet: gspread.Worksheet, spreadsheet: gspread.Spreadsheet) -> None:
-    """Fit every content column to its widest cell, after the values are written."""
+def _apply_geometry(worksheet: gspread.Worksheet, spreadsheet: gspread.Spreadsheet) -> None:
+    """Indent the tabulated lines and fit the columns, after the values are written.
+
+    Both are derived from what the tab holds, so running them on every pass is
+    idempotent: a column that grew keeps its width, and a line the owner un-indented
+    by hand gets its padding back.
+    """
     try:
         rows = worksheet.get_all_values()
-        spreadsheet.batch_update({"requests": content_width_requests(worksheet.id, rows)})
+        requests = [
+            *shared_indent_requests(worksheet.id),
+            *content_width_requests(worksheet.id, rows),
+        ]
+        spreadsheet.batch_update({"requests": requests})
     except gspread.exceptions.APIError as exc:
         raise _translate_api_error(exc) from exc
 
@@ -790,7 +855,7 @@ class LayoutWriter:
                 _write_summary_region(worksheet, balances)
             # Both paths: widths follow the content the tab now holds, hand-typed
             # cells included, so a long description widens its column on its own.
-            _apply_content_widths(worksheet, spreadsheet)
+            _apply_geometry(worksheet, spreadsheet)
         except (
             RawTabCollisionError,
             SheetsConfigError,

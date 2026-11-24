@@ -20,6 +20,7 @@ import pytest
 
 from banking.sheets.layout import (
     _RAW_HEADERS,
+    CATEGORIES,
     AccountBalance,
     ExpenseRow,
     LayoutWriter,
@@ -237,6 +238,17 @@ def _widths(spreadsheet: FakeSpreadsheet) -> dict[int, int]:
         for request in requests
         if "updateDimensionProperties" in request
     }
+
+
+def _indented_rows(spreadsheet: FakeSpreadsheet) -> set[int]:
+    """Rows the last ``batch_update`` indented, plus the column it touched."""
+    requests = [
+        request["repeatCell"]
+        for request in spreadsheet.batch_updates[-1]["requests"]
+        if "repeatCell" in request
+    ]
+    assert {request["range"]["startColumnIndex"] for request in requests} == {6}  # G
+    return {request["range"]["startRowIndex"] + 1 for request in requests}
 
 
 def _expense(day: int = 1, bank: str = "ING España", description: str = "Compra") -> ExpenseRow:
@@ -952,3 +964,20 @@ def test_a_hand_typed_income_amount_widens_its_column() -> None:
     after = _widths(spreadsheet)
     assert after[11] > before[11]
     assert after[11] >= len("123.456.789,00") * 7.8 + 28
+
+
+def test_the_shared_expenses_are_tabulated_under_their_header() -> None:
+    spreadsheet = FakeSpreadsheet()
+    writer, _client = _writer(spreadsheet)
+
+    writer.write("doc-1", "2026-08 Gastos", [_expense()], [])
+
+    rows = _indented_rows(spreadsheet)
+    labels = {row: CATEGORIES[row - 4] for row in rows}
+    # A line hanging from a header: indented.
+    assert labels[5] == "Mercadona" and 5 in rows
+    assert labels[13] == "Petsitter" and 13 in rows
+    # Its header: flush left.
+    assert 4 not in rows  # Alimentación
+    assert 12 not in rows  # Gatos
+    assert 52 not in rows  # *Otros
