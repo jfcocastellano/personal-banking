@@ -20,7 +20,12 @@ from banking.sheets.layout import (
 )
 from banking.sheets.style import (
     AMOUNT_FORMAT,
-    LIGHT_YELLOW,
+    BLUE_HEADER,
+    BLUE_TITLE,
+    GREEN_HEADER,
+    GREEN_TITLE,
+    SALMON_HEADER,
+    SALMON_TITLE,
     WHITE,
     format_requests,
     layout_requests,
@@ -93,25 +98,35 @@ def _formats_at(requests: list[dict[str, Any]], row: int, column: int) -> list[d
     return formats
 
 
-def test_the_summary_headers_are_light_yellow_with_white_labels() -> None:
+def test_each_panel_block_is_a_dark_title_over_a_light_header() -> None:
     requests = format_requests(SHEET_ID)
 
-    title = _formats_at(requests, _SUMMARY_TITLE_ROW, 10)[-1]
-    header = _formats_at(requests, _SUMMARY_HEADER_ROW, 11)[-1]
+    for title_row, header_row, title_accent, header_accent in (
+        (_INCOME_TITLE_ROW, _INCOME_HEADER_ROW, GREEN_TITLE, GREEN_HEADER),
+        (_SUMMARY_TITLE_ROW, _SUMMARY_HEADER_ROW, BLUE_TITLE, BLUE_HEADER),
+        (_BALANCE_TITLE_ROW, _BALANCE_HEADER_ROW, SALMON_TITLE, SALMON_HEADER),
+    ):
+        title = _formats_at(requests, title_row, 10)[-1]
+        header = _formats_at(requests, header_row, 11)[-1]
 
-    assert title["backgroundColor"] == LIGHT_YELLOW
-    # The band's title stays black; only CONCEPTO/CANTIDAD go white.
-    assert "foregroundColor" not in title["textFormat"]
-    assert header["backgroundColor"] == LIGHT_YELLOW
-    assert header["textFormat"]["foregroundColor"] == WHITE
+        assert title["backgroundColor"] == title_accent
+        assert header["backgroundColor"] == header_accent
+        # White letters on both bands, like the capture.
+        assert title["textFormat"]["foregroundColor"] == WHITE
+        assert header["textFormat"]["foregroundColor"] == WHITE
 
 
-def test_the_merged_summary_title_band_is_painted_the_same_yellow() -> None:
+def test_the_merged_title_bands_keep_their_dark_accent_and_white_letters() -> None:
     requests = layout_requests(SHEET_ID, column_count=12)
 
-    title = _formats_at(requests, _SUMMARY_TITLE_ROW, 11)[-1]
+    for title_row, accent in (
+        (_SUMMARY_TITLE_ROW, BLUE_TITLE),
+        (_BALANCE_TITLE_ROW, SALMON_TITLE),
+    ):
+        title = _formats_at(requests, title_row, 11)[-1]
 
-    assert title["backgroundColor"] == LIGHT_YELLOW
+        assert title["backgroundColor"] == accent
+        assert title["textFormat"]["foregroundColor"] == WHITE
 
 
 def test_the_money_pattern_is_the_reference_one() -> None:

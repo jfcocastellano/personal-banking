@@ -34,13 +34,17 @@ BODY_SIZE = 12
 AMOUNT_FORMAT = "#,##0.00 _€"
 
 RED = {"red": 1.0, "green": 0.0, "blue": 0.0}
-GREEN = {"red": 0.34, "green": 0.82, "blue": 0.31}
 ORANGE = {"red": 0.98, "green": 0.75, "blue": 0.56}
-LIGHT_BLUE = {"red": 0.74, "green": 0.84, "blue": 0.93}
-# The summary band: a strong, warm yellow (``FFDE00``), darker than the pale
-# ``FFFF99`` the owner rejected for not reading as yellow.
-LIGHT_YELLOW = {"red": 1.0, "green": 0.87, "blue": 0.0}
 WHITE = {"red": 1.0, "green": 1.0, "blue": 1.0}
+
+# Right-hand panel, taken from the capture the owner sent (task 022): each block is a
+# dark title band with white letters over a lighter header band, one hue per block.
+GREEN_TITLE = {"red": 0.61, "green": 0.73, "blue": 0.35}  # 9BBB59
+GREEN_HEADER = {"red": 0.57, "green": 0.82, "blue": 0.31}  # 92D050
+BLUE_TITLE = {"red": 0.31, "green": 0.51, "blue": 0.74}  # 4F81BD
+BLUE_HEADER = {"red": 0.33, "green": 0.55, "blue": 0.83}  # 548DD4
+SALMON_TITLE = {"red": 0.75, "green": 0.31, "blue": 0.30}  # C0504D
+SALMON_HEADER = {"red": 0.98, "green": 0.75, "blue": 0.56}  # FABF8F
 
 # Every row is the same height: the owner picked a real row (2026-11-05, ``DELICIES
 # ALBAL``) that happened to carry the header height and asked for the whole sheet to
@@ -189,14 +193,14 @@ def _right_hand_panel(sheet_id: int) -> list[dict[str, Any]]:
     """
     j, k = _COL_J + 1, _COL_K + 1
     return [
-        # INGRESOS: the income table, green like the expense block.
+        # INGRESOS: the income table, green.
         _repeat(
             sheet_id,
             _INCOME_TITLE_ROW,
             _INCOME_TITLE_ROW,
             j,
             k,
-            _cell_format(background=GREEN, bold=True, halign="CENTER"),
+            _cell_format(background=GREEN_TITLE, bold=True, color=WHITE, halign="CENTER"),
         ),
         _repeat(
             sheet_id,
@@ -204,7 +208,7 @@ def _right_hand_panel(sheet_id: int) -> list[dict[str, Any]]:
             _INCOME_HEADER_ROW,
             j,
             k,
-            _cell_format(background=GREEN, bold=True, color=WHITE, halign="CENTER"),
+            _cell_format(background=GREEN_HEADER, bold=True, color=WHITE, halign="CENTER"),
         ),
         _repeat(
             sheet_id,
@@ -222,15 +226,14 @@ def _right_hand_panel(sheet_id: int) -> list[dict[str, Any]]:
             k,
             _cell_format(background=WHITE, bold=True, halign="CENTER", number_format=AMOUNT_FORMAT),
         ),
-        # RESUMEN MES: light yellow band, like the owner's paper ledger, with the
-        # column labels in white on it. The title keeps black letters.
+        # RESUMEN MES: blue, the month summary the owner checks at a glance.
         _repeat(
             sheet_id,
             _SUMMARY_TITLE_ROW,
             _SUMMARY_TITLE_ROW,
             j,
             k,
-            _cell_format(background=LIGHT_YELLOW, bold=True, halign="CENTER"),
+            _cell_format(background=BLUE_TITLE, bold=True, color=WHITE, halign="CENTER"),
         ),
         _repeat(
             sheet_id,
@@ -238,7 +241,7 @@ def _right_hand_panel(sheet_id: int) -> list[dict[str, Any]]:
             _SUMMARY_HEADER_ROW,
             j,
             k,
-            _cell_format(background=LIGHT_YELLOW, bold=True, color=WHITE, halign="CENTER"),
+            _cell_format(background=BLUE_HEADER, bold=True, color=WHITE, halign="CENTER"),
         ),
         _repeat(
             sheet_id,
@@ -262,7 +265,7 @@ def _right_hand_panel(sheet_id: int) -> list[dict[str, Any]]:
             _BALANCE_TITLE_ROW,
             j,
             k,
-            _cell_format(background=LIGHT_BLUE, bold=True, halign="CENTER"),
+            _cell_format(background=SALMON_TITLE, bold=True, color=WHITE, halign="CENTER"),
         ),
         _repeat(
             sheet_id,
@@ -270,7 +273,7 @@ def _right_hand_panel(sheet_id: int) -> list[dict[str, Any]]:
             _BALANCE_HEADER_ROW,
             j,
             k,
-            _cell_format(background=LIGHT_BLUE, bold=True, halign="CENTER"),
+            _cell_format(background=SALMON_HEADER, bold=True, color=WHITE, halign="CENTER"),
         ),
         _repeat(
             sheet_id,
@@ -320,8 +323,8 @@ def layout_requests(sheet_id: int, *, column_count: int) -> list[dict[str, Any]]
     j, k = _COL_J + 1, _COL_K + 1
     requests: list[dict[str, Any]] = []
     for title_row, accent in (
-        (_SUMMARY_TITLE_ROW, LIGHT_YELLOW),
-        (_BALANCE_TITLE_ROW, LIGHT_BLUE),
+        (_SUMMARY_TITLE_ROW, BLUE_TITLE),
+        (_BALANCE_TITLE_ROW, SALMON_TITLE),
     ):
         requests.append(
             {
@@ -344,7 +347,7 @@ def layout_requests(sheet_id: int, *, column_count: int) -> list[dict[str, Any]]
                 title_row,
                 j,
                 k,
-                _cell_format(background=accent, bold=True, halign="CENTER"),
+                _cell_format(background=accent, bold=True, color=WHITE, halign="CENTER"),
             )
         )
     if column_count <= _COL_K + 1:
