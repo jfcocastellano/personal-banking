@@ -14,6 +14,8 @@ from banking.sheets.layout import (
     CATEGORIES,
     INCOME_LABELS,
     MAX_EXPENSE_ROWS,
+    SHARED_DEEP_INDENT_POINTS,
+    SHARED_INDENT_POINTS,
     SHARED_SECTION_HEADERS,
     AccountBalance,
     ExpenseRow,
@@ -497,3 +499,19 @@ def test_the_indent_requests_touch_only_column_g() -> None:
         assert repeat["range"]["startColumnIndex"] == 6  # G, 0-based
         assert repeat["range"]["endColumnIndex"] == 7
         assert repeat["cell"]["userEnteredFormat"]["padding"]["left"] > 0
+
+
+def test_the_dia_lines_hang_one_step_deeper_than_the_rest() -> None:
+    paddings = {
+        request["repeatCell"]["range"]["startRowIndex"] + 1: request["repeatCell"]["cell"][
+            "userEnteredFormat"
+        ]["padding"]["left"]
+        for request in shared_indent_requests(7)
+    }
+
+    dia_rows = {row for row, padding in paddings.items() if padding == SHARED_DEEP_INDENT_POINTS}
+    assert dia_rows == {14, 15, 16, 23, 24, 25, 26}
+    assert {CATEGORIES[row - 4] for row in dia_rows} == {"Día"}
+    # Everything else keeps the first step, and the two steps are distinct.
+    assert set(paddings.values()) == {SHARED_INDENT_POINTS, SHARED_DEEP_INDENT_POINTS}
+    assert len(paddings) - len(dia_rows) == 28

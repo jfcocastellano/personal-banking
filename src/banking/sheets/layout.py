@@ -124,8 +124,12 @@ SHARED_SECTION_HEADERS: tuple[str, ...] = (
     "*Otros",
 )
 
-# Indent of a tabulated line, in points, so it reads as hanging from its header.
+# Indent of a tabulated line, in points, so it reads as hanging from its header. The
+# ``Día`` lines go one step deeper: they are the day-to-day spend inside a section
+# (``Gatos``, ``Piso``), and the owner asked for them a level further in.
 SHARED_INDENT_POINTS = 24.0
+SHARED_DEEP_INDENT_POINTS = 48.0
+SHARED_DEEP_INDENT_LABELS: tuple[str, ...] = ("Día",)
 
 MAX_EXPENSE_ROWS = 400
 
@@ -622,6 +626,12 @@ def shared_sub_item_rows() -> tuple[int, ...]:
     )
 
 
+def _shared_indent_points(category: str) -> float:
+    return (
+        SHARED_DEEP_INDENT_POINTS if category in SHARED_DEEP_INDENT_LABELS else SHARED_INDENT_POINTS
+    )
+
+
 def shared_indent_requests(sheet_id: int) -> list[dict[str, object]]:
     """``repeatCell`` requests that indent the tabulated shared-expense lines."""
     column = _COL_G + 1  # 1-based for the A1-style range shape below
@@ -636,7 +646,11 @@ def shared_indent_requests(sheet_id: int) -> list[dict[str, object]]:
                     "endColumnIndex": column,
                 },
                 "cell": {
-                    "userEnteredFormat": {"padding": {"left": SHARED_INDENT_POINTS}},
+                    "userEnteredFormat": {
+                        "padding": {
+                            "left": _shared_indent_points(CATEGORIES[row - _CATEGORY_FIRST_ROW])
+                        }
+                    },
                 },
                 "fields": "userEnteredFormat.padding",
             }

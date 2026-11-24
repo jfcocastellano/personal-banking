@@ -230,7 +230,8 @@ El catálogo de gastos comunes es de dos niveles y también se tabula: `Mercadon
 `Consum`, `Otros`, `Petsitter`, los `Día`, `Zooplus`, `Agua`, `Gas`, `Limpieza`, `Luz`,
 `Menaje`, `HBO`, `Spotify`, los `AVE día`, `Motos alquiler`, `Taxi`, `VTC`, `Coche`, los
 `Gasolina día`, `Lavado`, `Parking`, `Peajes` y `Taller` van con 24 pt de sangría (35
-filas), mientras sus encabezados —`Alimentación`, `Gatos`, `Piso`, `Streaming`,
+filas) y los siete `Día` un escalón más adentro (48 pt, `SHARED_DEEP_INDENT_POINTS`),
+mientras sus encabezados —`Alimentación`, `Gatos`, `Piso`, `Streaming`,
 `Transporte`…— quedan al ras. `layout.SHARED_SECTION_HEADERS` es el conjunto que no se
 indenta y `shared_sub_item_rows()` deriva el resto del catálogo, así que una línea nueva
 solo necesita añadirse a `CATEGORIES`.
