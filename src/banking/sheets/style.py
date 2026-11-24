@@ -33,18 +33,23 @@ ARIAL = "Arial"
 BODY_SIZE = 12
 AMOUNT_FORMAT = "#,##0.00 _€"
 
-RED = {"red": 1.0, "green": 0.0, "blue": 0.0}
-ORANGE = {"red": 0.98, "green": 0.75, "blue": 0.56}
-WHITE = {"red": 1.0, "green": 1.0, "blue": 1.0}
+
+def _hex(red: int, green: int, blue: int) -> dict[str, float]:
+    """Colour the Sheets API accepts from the ``RRGGBB`` of the owner's capture."""
+    return {"red": red / 255, "green": green / 255, "blue": blue / 255}
+
+
+RED = _hex(0xFF, 0x00, 0x00)
+WHITE = _hex(0xFF, 0xFF, 0xFF)
+LIGHT_ORANGE = _hex(0xFA, 0xBF, 0x8F)
 
 # Right-hand panel, taken from the capture the owner sent (task 022): each block is a
-# dark title band with white letters over a lighter header band, one hue per block.
-GREEN_TITLE = {"red": 0.61, "green": 0.73, "blue": 0.35}  # 9BBB59
-GREEN_HEADER = {"red": 0.57, "green": 0.82, "blue": 0.31}  # 92D050
-BLUE_TITLE = {"red": 0.31, "green": 0.51, "blue": 0.74}  # 4F81BD
-BLUE_HEADER = {"red": 0.33, "green": 0.55, "blue": 0.83}  # 548DD4
-SALMON_TITLE = {"red": 0.75, "green": 0.31, "blue": 0.30}  # C0504D
-SALMON_HEADER = {"red": 0.98, "green": 0.75, "blue": 0.56}  # FABF8F
+# dark title band with white letters over a lighter header band of the same hue.
+GREEN_TITLE = _hex(0x9B, 0xBB, 0x59)
+GREEN_HEADER = _hex(0x92, 0xD0, 0x50)
+BLUE_TITLE = _hex(0x4F, 0x81, 0xBD)
+BLUE_HEADER = _hex(0x54, 0x8D, 0xD4)
+SALMON_TITLE = _hex(0xC0, 0x50, 0x4D)
 
 # Every row is the same height: the owner picked a real row (2026-11-05, ``DELICIES
 # ALBAL``) that happened to carry the header height and asked for the whole sheet to
@@ -162,7 +167,7 @@ def format_requests(sheet_id: int) -> list[dict[str, Any]]:
     requests.extend(
         _block(
             sheet_id,
-            accent=ORANGE,
+            accent=LIGHT_ORANGE,
             title_row=2,
             header_row=3,
             first_row=4,
@@ -273,7 +278,7 @@ def _right_hand_panel(sheet_id: int) -> list[dict[str, Any]]:
             _BALANCE_HEADER_ROW,
             j,
             k,
-            _cell_format(background=SALMON_HEADER, bold=True, color=WHITE, halign="CENTER"),
+            _cell_format(background=LIGHT_ORANGE, bold=True, color=WHITE, halign="CENTER"),
         ),
         _repeat(
             sheet_id,

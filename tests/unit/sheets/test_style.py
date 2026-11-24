@@ -24,7 +24,7 @@ from banking.sheets.style import (
     BLUE_TITLE,
     GREEN_HEADER,
     GREEN_TITLE,
-    SALMON_HEADER,
+    LIGHT_ORANGE,
     SALMON_TITLE,
     WHITE,
     format_requests,
@@ -104,7 +104,7 @@ def test_each_panel_block_is_a_dark_title_over_a_light_header() -> None:
     for title_row, header_row, title_accent, header_accent in (
         (_INCOME_TITLE_ROW, _INCOME_HEADER_ROW, GREEN_TITLE, GREEN_HEADER),
         (_SUMMARY_TITLE_ROW, _SUMMARY_HEADER_ROW, BLUE_TITLE, BLUE_HEADER),
-        (_BALANCE_TITLE_ROW, _BALANCE_HEADER_ROW, SALMON_TITLE, SALMON_HEADER),
+        (_BALANCE_TITLE_ROW, _BALANCE_HEADER_ROW, SALMON_TITLE, LIGHT_ORANGE),
     ):
         title = _formats_at(requests, title_row, 10)[-1]
         header = _formats_at(requests, header_row, 11)[-1]
