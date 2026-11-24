@@ -213,7 +213,7 @@ def _right_hand_panel(sheet_id: int) -> list[dict[str, Any]]:
             _INCOME_HEADER_ROW,
             j,
             k,
-            _cell_format(background=GREEN_HEADER, bold=True, color=WHITE, halign="CENTER"),
+            _cell_format(background=GREEN_HEADER, bold=True, color=WHITE, halign="LEFT"),
         ),
         _repeat(
             sheet_id,
@@ -221,7 +221,7 @@ def _right_hand_panel(sheet_id: int) -> list[dict[str, Any]]:
             _INCOME_LAST_ROW,
             j,
             k,
-            _cell_format(background=WHITE, bold=True),
+            _cell_format(background=WHITE, bold=True, halign="LEFT"),
         ),
         _repeat(
             sheet_id,
@@ -246,7 +246,7 @@ def _right_hand_panel(sheet_id: int) -> list[dict[str, Any]]:
             _SUMMARY_HEADER_ROW,
             j,
             k,
-            _cell_format(background=BLUE_HEADER, bold=True, color=WHITE, halign="CENTER"),
+            _cell_format(background=BLUE_HEADER, bold=True, color=WHITE, halign="LEFT"),
         ),
         _repeat(
             sheet_id,
@@ -254,7 +254,7 @@ def _right_hand_panel(sheet_id: int) -> list[dict[str, Any]]:
             _SUMMARY_TOTAL_ROW,
             j,
             k,
-            _cell_format(background=WHITE, bold=True),
+            _cell_format(background=WHITE, bold=True, halign="LEFT"),
         ),
         _repeat(
             sheet_id,
@@ -278,7 +278,7 @@ def _right_hand_panel(sheet_id: int) -> list[dict[str, Any]]:
             _BALANCE_HEADER_ROW,
             j,
             k,
-            _cell_format(background=LIGHT_ORANGE, bold=True, color=WHITE, halign="CENTER"),
+            _cell_format(background=LIGHT_ORANGE, bold=True, color=WHITE, halign="LEFT"),
         ),
         _repeat(
             sheet_id,
@@ -286,7 +286,7 @@ def _right_hand_panel(sheet_id: int) -> list[dict[str, Any]]:
             _SUMMARY_PANEL_LAST_ROW,
             j,
             k,
-            _cell_format(background=WHITE, bold=True, halign="CENTER"),
+            _cell_format(background=WHITE, bold=True, halign="LEFT"),
         ),
         _repeat(
             sheet_id,

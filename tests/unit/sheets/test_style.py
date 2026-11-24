@@ -116,6 +116,30 @@ def test_each_panel_block_is_a_dark_title_over_a_light_header() -> None:
         assert header["textFormat"]["foregroundColor"] == WHITE
 
 
+def test_the_panel_reads_from_the_left_edge_except_titles_and_amounts() -> None:
+    # The owner asked for the labels ("Nomina", "Ingresos totales"...) to sit flush
+    # left; the amounts keep their own repeat, centred like in his capture.
+    requests = format_requests(SHEET_ID)
+
+    for row in (
+        _INCOME_FIRST_ROW,
+        _INCOME_LAST_ROW,
+        _SUMMARY_INCOME_ROW,
+        _SUMMARY_TOTAL_ROW,
+        _BALANCE_FIRST_ROW,
+        _SUMMARY_PANEL_LAST_ROW,
+    ):
+        assert _formats_at(requests, row, 10)[-1]["horizontalAlignment"] == "LEFT"
+        assert _formats_at(requests, row, 11)[-1]["horizontalAlignment"] == "CENTER"
+
+    for row in (_INCOME_HEADER_ROW, _SUMMARY_HEADER_ROW, _BALANCE_HEADER_ROW):
+        assert _formats_at(requests, row, 10)[-1]["horizontalAlignment"] == "LEFT"
+        assert _formats_at(requests, row, 11)[-1]["horizontalAlignment"] == "LEFT"
+
+    for row in (_INCOME_TITLE_ROW, _SUMMARY_TITLE_ROW, _BALANCE_TITLE_ROW):
+        assert _formats_at(requests, row, 11)[-1]["horizontalAlignment"] == "CENTER"
+
+
 def test_the_merged_title_bands_keep_their_dark_accent_and_white_letters() -> None:
     requests = layout_requests(SHEET_ID, column_count=12)
 

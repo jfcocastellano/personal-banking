@@ -203,7 +203,9 @@ banda de título **oscura** con letras blancas encima de una banda de cabecera m
 del mismo tono —`INGRESOS` `9BBB59` sobre `92D050`, `RESUMEN MES` `4F81BD` sobre
 `548DD4`, `SALDO CUENTAS` `C0504D` sobre `FABF8F`— y el amarillo `FFDE00` desapareció.
 De la captura también salieron los rótulos `CANTIDAD` en la cabecera de saldos y el
-`TOTAL` en mayúsculas de la última fila.
+`TOTAL` en mayúsculas de la última fila, y la alineación: conceptos y cabeceras a la
+izquierda, importes centrados (en la captura los seis saldos giran alrededor de la misma
+x, no empiezan en la misma) y títulos de banda centrados sobre `J:K`.
 
 El resumen nació sin fondo («no tiene acento propio», pedido del 2026-11-22) y el
 2026-11-23 el dueño pidió **amarillo en el título y la cabecera**, con las letras de
