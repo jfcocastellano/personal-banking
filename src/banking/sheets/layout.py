@@ -233,15 +233,19 @@ _MAX_BALANCE_ROWS = 8
 _SUMMARY_PANEL_LAST_ROW = _summary_panel_last_row(_MAX_BALANCE_ROWS)  # 29
 
 _INCOME_TOTAL_FORMULA = f"=SUM({_INCOME_RANGE})"
-# Expenses are shown positive and subtracted from the income, so the outcome reads
-# like the owner's ledger: 368.39 - 1735.98 - 800.00 = -2167.59.
+# ``Importe`` is signed as the bank reports it: an expense is negative and a refund is
+# positive (a Bizum the owner receives lands as ``+499``). So "Gastos míos" is the net
+# of the column with the sign flipped, not the sum of the negative rows: on 2026-11 the
+# negatives add up to -2717.01 and the positives to 747.27, and the owner's figure is
+# 1969.74. Expenses then read positive and are subtracted from the income, so the
+# outcome looks like his ledger: 368.39 - 1735.98 - 800.00 = -2167.59.
 #
-# The spreadsheet is in the ``es_ES`` locale, and there Sheets parses formulas with
-# its own argument separator: ``SUMIF($E$4:$E$403,"<0",$E$4:$E$403)`` is stored as a
-# formula but renders ``#ERROR!`` because a comma is a decimal mark there and the
-# separator must be ``;``. ``SUMPRODUCT`` with one argument has no separator at all,
-# so the same text works in any locale; blanks multiply to zero and drop out.
-_OWN_EXPENSE_FORMULA = f"=-SUMPRODUCT({_AMOUNT_RANGE}*({_AMOUNT_RANGE}<0))"
+# The sums are single-range and write no argument separator on purpose: the
+# spreadsheet is in the ``es_ES`` locale, where ``SUMIF($E$4:$E$403,"<0",$E$4:$E$403)``
+# is stored as a formula but renders ``#ERROR!`` because a comma is a decimal mark and
+# the separator must be ``;``. ``SUM(range)`` and ``SUMPRODUCT(range*(range<0))`` have
+# no separators, so the same text works in any locale.
+_OWN_EXPENSE_FORMULA = f"=-SUM({_AMOUNT_RANGE})"
 _SHARED_TOTAL_FORMULA = f"=SUM(H{_CATEGORY_FIRST_ROW}:H{_CATEGORY_LAST_ROW})"
 _SHARED_TOTAL_CELL_FORMULA = f"=H{_CATEGORY_TOTAL_ROW}"
 _SUMMARY_TOTAL_FORMULA = f"=K{_SUMMARY_INCOME_ROW}-K{_SUMMARY_EXPENSE_ROW}-K{_SUMMARY_SHARED_ROW}"

@@ -153,7 +153,7 @@ del escritor.
 | 12 | `RESUMEN MES` (título, merge `J:K`) |
 | 13 | cabecera `CONCEPTO` / `CANTIDAD` |
 | 14 | Ingresos totales → `=SUM(K4:K10)` |
-| 15 | Gastos míos → `=-SUMPRODUCT($E$4:$E$403*($E$4:$E$403<0))` |
+| 15 | Gastos míos → `=-SUM($E$4:$E$403)` |
 | 16 | Gastos comunes → `=H53` |
 | 17 | Total → `=K14-K15-K16` |
 | 18 | en blanco |
@@ -183,13 +183,19 @@ Constantes nuevas en `layout.py`: `_INCOME_TITLE_ROW=2`, `_INCOME_HEADER_ROW=3`,
 `_BALANCE_HEADER_ROW=21`, `_BALANCE_FIRST_ROW=22`, `_SUMMARY_PANEL_LAST_ROW=30`, y la
 tupla `INCOME_LABELS`.
 
-Fórmulas finales: `K14 =SUM(K4:K10)`, `K15 =-SUMPRODUCT($E$4:$E$403*($E$4:$E$403<0))`,
+Fórmulas finales: `K14 =SUM(K4:K10)`, `K15 =-SUM($E$4:$E$403)`,
 `K16 =H53`, `K18 =K14-K15-K16`. La versión con `SUMIF` de tres argumentos
 (`_SPEND_BODY`) se guardaba como fórmula pero se pintaba `#ERROR!` en la hoja real: está
-en `es_ES` y allí Sheets separa argumentos con `;` y lee la coma como marca decimal. El
-`SUMPRODUCT` de un argumento da el mismo total sin separadores, así que el texto de la
-fórmula vale en cualquier idioma; un test recorre el grid y exige que ninguna fórmula
-lleve `,` ni `;`.
+en `es_ES` y allí Sheets separa argumentos con `;` y lee la coma como marca decimal. Las
+sumas de un solo rango no llevan separadores, así que el texto de la fórmula vale en
+cualquier idioma; un test recorre el grid y exige que ninguna fórmula lleve `,` ni `;`.
+
+`Gastos míos` pasó por tres formas hasta dar con la que el dueño quería: `SUMIF` de
+negativos (roto por el idioma), `SUMPRODUCT` de negativos (2717,01, sólo los cargos) y
+`-SUM` de la columna entera. El 2026-11 el dueño lo dejó claro: la columna viene firmada
+del banco, así que un Bizum recibido de MARK BENAJES MCCONNELL entra como `+499` y tiene
+que descontarse. La cuenta del mes es 2717,01 gastado − 747,27 recibido = **1969,74**, y
+un test lo fija (`test_my_expenses_are_the_net_of_the_amount_column_not_just_its_negatives`).
 
 Escritura (`_write_summary_region`): si la fila 12 columna J no dice `RESUMEN MES`, la
 pestaña está en la geometría vieja y se limpia desde `J2` (una sola vez); a partir de ahí

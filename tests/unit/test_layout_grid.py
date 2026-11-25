@@ -207,13 +207,25 @@ def test_summary_table_sums_income_and_subtracts_both_expense_blocks() -> None:
     assert _cell(grid, SUMMARY_INCOME_ROW, J) == "Ingresos totales"
     assert _cell(grid, SUMMARY_INCOME_ROW, K) == "=SUM(K4:K10)"
     assert _cell(grid, SUMMARY_EXPENSE_ROW, J) == "Gastos míos"
-    assert _cell(grid, SUMMARY_EXPENSE_ROW, K) == "=-SUMPRODUCT($E$4:$E$403*($E$4:$E$403<0))"
+    assert _cell(grid, SUMMARY_EXPENSE_ROW, K) == "=-SUM($E$4:$E$403)"
     assert _cell(grid, SUMMARY_SHARED_ROW, J) == "Gastos comunes"
     assert _cell(grid, SUMMARY_SHARED_ROW, K) == "=H53"
     # The owner asked for the blank row between "Gastos comunes" and "Total" to go.
     assert _cell(grid, SUMMARY_TOTAL_ROW, J) == "Total"
     assert _cell(grid, SUMMARY_TOTAL_ROW - 1, J) == "Gastos comunes"
     assert _cell(grid, SUMMARY_TOTAL_ROW, K) == "=K14-K15-K16"
+
+
+def test_my_expenses_are_the_net_of_the_amount_column_not_just_its_negatives() -> None:
+    # An incoming Bizum lands in ``Importe`` as a positive figure (``+499`` from MARK
+    # BENAJES on 2026-11) and has to come off the spend: 2717.01 spent - 747.27
+    # received = 1969.74, the figure the owner gave.
+    grid = build_month_grid([], [])
+
+    formula = _cell(grid, SUMMARY_EXPENSE_ROW, K)
+
+    assert formula == "=-SUM($E$4:$E$403)"
+    assert "<0" not in formula
 
 
 def test_no_formula_depends_on_the_spreadsheet_locale() -> None:
@@ -441,7 +453,7 @@ def test_a_runaway_description_stops_at_the_maximum_width() -> None:
 
 
 def test_a_formula_does_not_widen_its_column() -> None:
-    widths = column_widths([["", "FECHA", "BANCO", "=-SUMPRODUCT($E$4:$E$403*($E$4:$E$403<0))"]])
+    widths = column_widths([["", "FECHA", "BANCO", "=-SUM($E$4:$E$403)"]])
 
     # The source text is not the width the cell renders at, so D stays at the floor.
     assert widths[4] == 90
